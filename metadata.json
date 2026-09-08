@@ -1,0 +1,6 @@
+{
+  "name": "PolarNav | Antarctic Mission Control",
+  "description": "Antarctic navigation intelligence and mission control dashboard for sea-ice assessment, iceberg tracking, and research-vessel navigation planning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
