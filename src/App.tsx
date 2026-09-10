@@ -40,6 +40,11 @@ export default function App() {
     bergs: true,
     route: true,
     driftVectors: false,
+    grid: true,
+    radarSweep: true,
+    stations: true,
+    bathymetry: false,
+    dangerCones: true,
   });
 
   // Selected item states
@@ -146,24 +151,17 @@ export default function App() {
         };
       });
 
-      // 3. Iceberg drift tracking
+      // 3. Keep iceberg telemetry stable (no coordinate jitter)
       setIcebergs((prevBergs) =>
         prevBergs.map((b) => {
-          const speedFlux = Number((Math.random() * 0.1 - 0.05).toFixed(2));
-          const newDriftSpeed = Math.max(0.4, Number((b.driftSpeedKnots + speedFlux).toFixed(1)));
-          const rad = (b.driftHeadingDeg * Math.PI) / 180;
-          const deltaX = Math.sin(rad) * 0.06;
-          const deltaY = -Math.cos(rad) * 0.06;
-
+          const speedFlux = Number((Math.random() * 0.04 - 0.02).toFixed(2));
           return {
             ...b,
-            driftSpeedKnots: newDriftSpeed,
-            svgX: Number((b.svgX + deltaX).toFixed(2)),
-            svgY: Number((b.svgY + deltaY).toFixed(2)),
+            driftSpeedKnots: Math.max(0.4, Number((b.driftSpeedKnots + speedFlux).toFixed(1))),
           };
         })
       );
-    }, 4000);
+    }, 8000);
 
     return () => clearInterval(streamInterval);
   }, [systemMode]);
@@ -251,6 +249,8 @@ export default function App() {
                 onSelectIceberg={setSelectedIcebergId}
                 layers={mapLayers}
                 onToggleLayer={handleToggleLayer}
+                selectedCorridorId={selectedCorridorId}
+                onSelectCorridor={setSelectedCorridorId}
               />
 
               <div className="flex flex-col gap-4">
@@ -302,6 +302,12 @@ export default function App() {
             corridors={mockCorridors}
             selectedCorridorId={selectedCorridorId}
             onSelectCorridor={setSelectedCorridorId}
+            icebergs={icebergs}
+            vessel={vessel}
+            selectedIcebergId={selectedIcebergId}
+            onSelectIceberg={setSelectedIcebergId}
+            layers={mapLayers}
+            onToggleLayer={handleToggleLayer}
           />
         )}
 

@@ -37,7 +37,45 @@ export interface MapLayers {
   route: boolean;
   driftVectors: boolean;
   grid: boolean;
+  radarSweep?: boolean;
+  stations?: boolean;
+  bathymetry?: boolean;
+  dangerCones?: boolean;
 }
+
+export interface ResearchStation {
+  id: string;
+  code: string;
+  name: string;
+  country: string;
+  countryCode: string;
+  flag: string;
+  latDisplay: string;
+  lonDisplay: string;
+  svgX: number;
+  svgY: number;
+  personnelWinter: number;
+  personnelSummer: number;
+  mission: string;
+  establishedYear: number;
+  elevationM: number;
+}
+
+export interface MapWaypoint {
+  id: string;
+  name: string;
+  corridorId: string;
+  lat: string;
+  lon: string;
+  svgX: number;
+  svgY: number;
+  distNm: number;
+  depthM: number;
+  iceThicknessM: number;
+  eta: string;
+  status: 'Passed' | 'Next' | 'En Route' | 'Planned' | 'Destination';
+}
+
 
 export interface VesselTelemetry {
   name: string;
