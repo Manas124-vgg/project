@@ -17,6 +17,8 @@ import { SeaIceChart } from './components/SeaIceChart';
 import { IcebergList } from './components/IcebergList';
 import { SensorArrayLog } from './components/SensorArrayLog';
 import { Footer } from './components/Footer';
+import ChatWidget from './components/ChatWidget';
+import { fetchLiveAntarcticWeather } from './services/weatherService';
 
 // Section Views
 import { IceConditionsView } from './components/views/IceConditionsView';
@@ -86,6 +88,85 @@ export default function App() {
       seaIceCoveragePct: Math.round(env.seaIceCoveragePct + (Math.random() * 2 - 1)),
     }));
   };
+
+  // Fetch real-world live Antarctic weather from Open-Meteo
+  useEffect(() => {
+    let isMounted = true;
+    async function loadLiveWeather() {
+      const liveData = await fetchLiveAntarcticWeather(-64.42, -57.18);
+      if (isMounted && liveData.isLive) {
+        setEnvironment((prev) => ({
+          ...prev,
+          airTempC: liveData.airTempC ?? prev.airTempC,
+          windSpeedKn: liveData.windSpeedKn ?? prev.windSpeedKn,
+          windGustKn: liveData.windGustKn ?? prev.windGustKn,
+          windDir: liveData.windDir ?? prev.windDir,
+          barometricPressureHpa: liveData.barometricPressureHpa ?? prev.barometricPressureHpa,
+          waterTempC: liveData.waterTempC ?? prev.waterTempC,
+          freezeUpRisk: liveData.freezeUpRisk ?? prev.freezeUpRisk,
+        }));
+      }
+    }
+    loadLiveWeather();
+    const weatherInterval = setInterval(loadLiveWeather, 300000); // refresh every 5 mins
+    return () => {
+      isMounted = false;
+      clearInterval(weatherInterval);
+    };
+  }, []);
+
+  // Real-time live telemetry stream
+  useEffect(() => {
+    if (systemMode !== 'live') return;
+
+    const streamInterval = setInterval(() => {
+      // 1. Vessel dynamic fluctuations
+      setVessel((v) => {
+        const speedDelta = Number((Math.random() * 0.4 - 0.2).toFixed(1));
+        const newSpeed = Math.max(8.5, Math.min(12.5, Number((v.speedKnots + speedDelta).toFixed(1))));
+        const headingDelta = Math.floor(Math.random() * 3 - 1);
+        const newHeading = (v.heading + headingDelta + 360) % 360;
+        const strainDelta = Math.floor(Math.random() * 3 - 1);
+        const newStrain = Math.min(58, Math.max(28, v.hullStrainPercent + strainDelta));
+
+        return {
+          ...v,
+          speedKnots: newSpeed,
+          heading: newHeading,
+          hullStrainPercent: newStrain,
+        };
+      });
+
+      // 2. Micro-updates to environment
+      setEnvironment((env) => {
+        const windDrift = Math.floor(Math.random() * 3 - 1);
+        return {
+          ...env,
+          windSpeedKn: Math.max(10, Math.min(45, env.windSpeedKn + windDrift)),
+        };
+      });
+
+      // 3. Iceberg drift tracking
+      setIcebergs((prevBergs) =>
+        prevBergs.map((b) => {
+          const speedFlux = Number((Math.random() * 0.1 - 0.05).toFixed(2));
+          const newDriftSpeed = Math.max(0.4, Number((b.driftSpeedKnots + speedFlux).toFixed(1)));
+          const rad = (b.driftHeadingDeg * Math.PI) / 180;
+          const deltaX = Math.sin(rad) * 0.06;
+          const deltaY = -Math.cos(rad) * 0.06;
+
+          return {
+            ...b,
+            driftSpeedKnots: newDriftSpeed,
+            svgX: Number((b.svgX + deltaX).toFixed(2)),
+            svgY: Number((b.svgY + deltaY).toFixed(2)),
+          };
+        })
+      );
+    }, 4000);
+
+    return () => clearInterval(streamInterval);
+  }, [systemMode]);
 
   // Keyboard shortcut listener
   useEffect(() => {
@@ -239,6 +320,16 @@ export default function App() {
         {/* Footer */}
         <Footer />
       </main>
+
+      {/* AI Decision Assistant Chat Widget with Real-time Situational Context */}
+      <ChatWidget
+        telemetry={{
+          vessel,
+          environment,
+          icebergs,
+          corridors: mockCorridors,
+        }}
+      />
     </div>
   );
 }

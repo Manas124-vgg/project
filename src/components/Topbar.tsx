@@ -94,8 +94,17 @@ export const Topbar: React.FC<TopbarProps> = ({
           </strong>
         </div>
 
+        {/* Live Stream Pulse Indicator */}
+        <div className="hidden sm:flex items-center gap-1.5 border border-[rgba(69,224,208,0.3)] rounded-[11px] px-2.5 py-2 bg-[rgba(69,224,208,0.06)] text-[#45e0d0] text-[11px] font-mono shadow-xs">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#45e0d0] opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#45e0d0]"></span>
+          </span>
+          <span className="font-semibold text-[10px] tracking-wider uppercase">Live Stream</span>
+        </div>
+
         {/* Quick Polar Grid coordinates indicator */}
-        <div className="hidden sm:flex items-center gap-1 border border-[rgba(165,177,224,0.13)] rounded-[11px] px-2.5 py-2 bg-[rgba(255,255,255,0.025)] text-[#9297b1] text-[11px]">
+        <div className="hidden md:flex items-center gap-1 border border-[rgba(165,177,224,0.13)] rounded-[11px] px-2.5 py-2 bg-[rgba(255,255,255,0.025)] text-[#9297b1] text-[11px]">
           <span className="w-2 h-2 rounded-full bg-[#45e0d0] opacity-80" />
           <span className="font-mono text-[10px] text-[#b7bad0]">64°18'S · 56°42'W</span>
         </div>
