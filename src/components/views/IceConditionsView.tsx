@@ -1,5 +1,6 @@
 import React from 'react';
 import { EnvironmentalCondition } from '../../types';
+import { IceMap } from '../IceMap';
 
 interface IceConditionsViewProps {
   environment: EnvironmentalCondition;
@@ -15,6 +16,22 @@ export const IceConditionsView: React.FC<IceConditionsViewProps> = ({ environmen
 
   return (
     <div className="space-y-4" id="view-ice-conditions">
+      {/* High-Resolution Interactive Sea Ice Telemetry Map */}
+      <div className="panel glass p-5 rounded-[22px]">
+        <div className="flex justify-between items-center pb-3 border-b border-[rgba(165,177,224,0.13)] mb-4">
+          <div>
+            <h3 className="font-space text-sm font-semibold text-[#f1f2fa]">
+              SAR Sea-Ice Concentration Grid & Iceberg Hazard Zones
+            </h3>
+            <p className="text-[10px] text-[#9297b1]">Weddell Sea Approach · In-situ telemetry & radar backscatter</p>
+          </div>
+          <span className="badge border border-[rgba(69,224,208,0.2)] text-[#45e0d0] text-[9px] px-2 py-1 rounded-md">
+            Interactive GIS Layer
+          </span>
+        </div>
+        <IceMap height="460px" />
+      </div>
+
       {/* Top Banner */}
       <div className="panel glass p-6 rounded-[22px] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>

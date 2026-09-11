@@ -190,3 +190,46 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(139, 124, 255, 0.45);
 }
+
+/* Leaflet Polar Theme Controls & Glassmorphic Popups */
+.leaflet-popup-content-wrapper {
+  background: rgba(12, 17, 31, 0.96) !important;
+  color: #f1f2fa !important;
+  border: 1px solid rgba(165, 177, 224, 0.25) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(12px) !important;
+  padding: 4px !important;
+}
+
+.leaflet-popup-tip {
+  background: rgba(12, 17, 31, 0.96) !important;
+}
+
+.leaflet-popup-close-button {
+  color: #9297b1 !important;
+  padding: 6px !important;
+}
+
+.leaflet-popup-close-button:hover {
+  color: #45e0d0 !important;
+}
+
+.leaflet-bar {
+  border: 1px solid rgba(165, 177, 224, 0.25) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+}
+
+.leaflet-bar a {
+  background-color: rgba(12, 16, 28, 0.9) !important;
+  color: #c2c7e0 !important;
+  border-bottom: 1px solid rgba(165, 177, 224, 0.15) !important;
+  transition: all 0.15s ease !important;
+}
+
+.leaflet-bar a:hover {
+  background-color: #1a2238 !important;
+  color: #45e0d0 !important;
+}
