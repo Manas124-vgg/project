@@ -233,3 +233,9 @@
   background-color: #1a2238 !important;
   color: #45e0d0 !important;
 }
+
+/* Force sharp, crisp tile rendering without browser blur interpolation */
+.leaflet-container img.leaflet-tile {
+  image-rendering: -webkit-optimize-contrast !important;
+  image-rendering: crisp-edges !important;
+}
