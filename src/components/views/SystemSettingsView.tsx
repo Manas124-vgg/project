@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { GOOGLE_CONFIG, getCurrentUser, logout, onAuthStateChanged, UserProfile } from '../../services/authService';
+import { GoogleAuthModal } from '../GoogleAuthModal';
 
 export const SystemSettingsView: React.FC = () => {
   const [distanceUnit, setDistanceUnit] = useState<'nm' | 'km'>('nm');
@@ -8,6 +10,13 @@ export const SystemSettingsView: React.FC = () => {
   const [soundAlerts, setSoundAlerts] = useState<boolean>(true);
   const [bridgeDimming, setBridgeDimming] = useState<boolean>(false);
   const [savedNotice, setSavedNotice] = useState<boolean>(false);
+  const [user, setUser] = useState<UserProfile | null>(() => getCurrentUser());
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged((newUser) => setUser(newUser));
+    return unsub;
+  }, []);
 
   const handleSave = () => {
     setSavedNotice(true);
@@ -169,6 +178,108 @@ export const SystemSettingsView: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Google Cloud Platform & Gemini AI Integrations */}
+        <div className="panel glass p-5 rounded-[22px] md:col-span-2">
+          <div className="flex justify-between items-center pb-3 border-b border-[rgba(165,177,224,0.13)] mb-4">
+            <div>
+              <h3 className="font-space text-sm font-semibold text-[#f1f2fa]">
+                Cloud AI & Google Identity Gateway
+              </h3>
+              <p className="text-[11px] text-[#9297b1]">
+                Active configuration for Gemini Decision Support and Google Cloud OAuth 2.0
+              </p>
+            </div>
+            <span className="px-2.5 py-1 rounded-full bg-[rgba(69,224,208,0.12)] border border-[rgba(69,224,208,0.25)] text-[#45e0d0] text-[10px] font-mono font-semibold">
+              Live Connected
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+            {/* Gemini Status */}
+            <div className="rounded-xl border border-[rgba(165,177,224,0.1)] bg-[rgba(255,255,255,0.02)] p-4 space-y-2">
+              <div className="flex items-center gap-2 text-[#45e0d0] font-semibold font-space">
+                <span>✦</span>
+                <span>Gemini 3.6 Flash Engine</span>
+              </div>
+              <p className="text-[11px] text-[#9297b1]">
+                Real-time polar mission reasoning, iceberg hazard telemetry evaluation, and route guidance.
+              </p>
+              <div className="pt-2 border-t border-[rgba(165,177,224,0.08)]">
+                <span className="text-[10px] text-[#666b86] block uppercase tracking-wider font-mono">API Key Status</span>
+                <span className="font-mono text-[#66e2a3] text-[11px] font-medium flex items-center gap-1.5 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#66e2a3]"></span>
+                  Active (Configured from .env)
+                </span>
+              </div>
+            </div>
+
+            {/* Google Cloud OAuth 2.0 */}
+            <div className="rounded-xl border border-[rgba(165,177,224,0.1)] bg-[rgba(255,255,255,0.02)] p-4 space-y-2">
+              <div className="flex items-center gap-2 text-[#c9c2ff] font-semibold font-space">
+                <span>☁</span>
+                <span>Google Cloud Project</span>
+              </div>
+              <div className="space-y-1 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-[#9297b1]">Project ID:</span>
+                  <span className="font-mono text-[#f1f2fa]">{GOOGLE_CONFIG.projectId}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#9297b1]">Domain:</span>
+                  <span className="font-mono text-[#45e0d0]">{GOOGLE_CONFIG.appUrl}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#9297b1]">Client ID:</span>
+                  <span className="font-mono text-[#9297b1] text-[10px] truncate max-w-[120px]" title={GOOGLE_CONFIG.clientId}>
+                    {GOOGLE_CONFIG.clientId.slice(0, 16)}...
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Operator Auth Status */}
+            <div className="rounded-xl border border-[rgba(165,177,224,0.1)] bg-[rgba(255,255,255,0.02)] p-4 flex flex-col justify-between">
+              <div>
+                <span className="text-[#8b7cff] font-semibold font-space flex items-center gap-2">
+                  <span>⚓</span>
+                  <span>Officer Identity</span>
+                </span>
+                {user ? (
+                  <div className="mt-2 space-y-1">
+                    <p className="font-bold text-white text-xs">{user.name}</p>
+                    <p className="text-[11px] text-[#9297b1] truncate">{user.email}</p>
+                    <span className="inline-block px-1.5 py-0.5 rounded bg-[rgba(102,226,163,0.15)] text-[#66e2a3] text-[10px] font-mono">
+                      ✓ Authenticated ({user.provider})
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-[#9297b1] mt-2">
+                    Not currently authenticated. Sign in with Google Cloud Identity to unlock mission logs.
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-3">
+                {user ? (
+                  <button
+                    onClick={() => logout()}
+                    className="w-full py-1.5 px-3 rounded-lg border border-red-800/40 bg-red-950/25 hover:bg-red-900/30 text-red-300 text-[11px] font-mono transition-colors cursor-pointer"
+                  >
+                    Disconnect Session
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setIsAuthModalOpen(true)}
+                    className="w-full py-1.5 px-3 rounded-lg border border-[rgba(69,224,208,0.3)] bg-[rgba(69,224,208,0.1)] hover:bg-[rgba(69,224,208,0.2)] text-[#45e0d0] text-[11px] font-space font-semibold transition-all cursor-pointer"
+                  >
+                    Authenticate with Google
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="flex justify-end gap-3 pt-2">
@@ -179,6 +290,12 @@ export const SystemSettingsView: React.FC = () => {
           Save Configuration Preferences
         </button>
       </div>
+
+      <GoogleAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={(u) => setUser(u)}
+      />
     </div>
   );
 };
