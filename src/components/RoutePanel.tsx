@@ -20,7 +20,7 @@ export const RoutePanel: React.FC<RoutePanelProps> = ({
   const currentCorridor = corridors.find((c) => c.id === selectedCorridorId) || corridors[0];
 
   return (
-    <div className="bento-card flex flex-col justify-between gap-3.5" id="navigation-context-panel">
+    <div className="bento-card p-5 flex flex-col justify-between gap-3.5" id="navigation-context-panel">
       {/* Header with corridor tabs */}
       <div>
         <div className="flex justify-between items-center pb-2.5 border-b border-[rgba(165,177,224,0.15)] mb-3">

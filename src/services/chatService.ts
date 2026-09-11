@@ -9,14 +9,19 @@ const apiKey =
     "";
 const ai = new GoogleGenAI({ apiKey });
 
-const SYSTEM_PROMPT = `You are the AI Decision Support Assistant for our Smart India Hackathon (SIH) project: 
+// Exported so the settings view can show an honest Gemini status instead of
+// always claiming "Live Connected" even when no key is configured.
+export const isGeminiConfigured = (): boolean => Boolean(apiKey && apiKey.trim().length > 8);
+
+const SYSTEM_PROMPT = `You are POLARIS, the AI Decision Support Assistant for our Smart India Hackathon (SIH) project: 
 "AI-enabled Antarctic Sea-Ice, Iceberg Trajectory, and Navigation Decision Support System" (Problem Statement 26059).
 
 Your roles:
 1. Provide crisp, professional mission-control style situational awareness and navigation advice.
 2. When asked about current ship location, weather, iceberg threats, or routes, ALWAYS use the provided real-time situational data.
-3. If asked about project details, explain our AI models (PINNs for iceberg drift, U-Net for SAR sea-ice segmentation, Dijkstra/A* for safe navigational corridors).
-4. Keep answers informative, concise, and nautical in tone.`;
+3. THREAT ANALYSIS: when asked about iceberg danger, rank the top threats by combining distance, drift vector relative to our vessel's heading (closing vs opening), drift speed, draft (deeper keels are harder to detect by bow-mounted sonar), and hazard level. Give a CPA-style verdict per threat and a recommended watch quadrant.
+4. If asked about project details, explain our AI models (PINNs for iceberg drift, U-Net for SAR sea-ice segmentation, Dijkstra/A* for safe navigational corridors).
+5. Keep answers informative, concise, and nautical in tone. Use \u2022 bullets for multi-point answers. If data is missing, say so plainly.`;
 
 export interface SystemTelemetryContext {
     vessel?: VesselTelemetry;
@@ -51,10 +56,15 @@ function formatTelemetryContext(ctx?: SystemTelemetryContext): string {
     }
 
     if (ctx.icebergs && ctx.icebergs.length > 0) {
-        const bergLines = ctx.icebergs.map(b => 
-            `  * [${b.code}] ${b.name}: ${b.distanceNm} NM away (${b.latDisplay}, ${b.lonDisplay}), Hazard: ${b.hazardLevel.toUpperCase()}, Drift: ${b.driftSpeedKnots} kn @ ${b.driftHeadingDeg}°, Dimensions: ${b.dimensions}, Draft: ${b.draftM}m`
+        // Rank by nearest first so the model sees priority ordering
+        const sorted = [...ctx.icebergs].sort((a, b) => a.distanceNm - b.distanceNm);
+        const bergLines = sorted.map((b, idx) => 
+            `  ${idx + 1}. [${b.code}] ${b.name} (${b.sizeCategory}): ${b.distanceNm} NM ${b.latDisplay}, ${b.lonDisplay} | Hazard: ${b.hazardLevel.toUpperCase()} | Drift: ${b.driftSpeedKnots} kn @ ${b.driftHeadingDeg}° | Draft: ${b.draftM}m | Status: ${b.status}`
         ).join("\n");
-        parts.push(`ACTIVE RADAR & SATELLITE ICEBERG TARGETS (${ctx.icebergs.length} tracked):\n${bergLines}`);
+        const nearest = sorted[0];
+        const criticalCount = ctx.icebergs.filter(b => b.hazardLevel === 'critical').length;
+        const highCount = ctx.icebergs.filter(b => b.hazardLevel === 'high').length;
+        parts.push(`ACTIVE RADAR & SATELLITE ICEBERG TARGETS (${ctx.icebergs.length} tracked | ${criticalCount} critical, ${hazardLabel(highCount)}):\nNearest contact: [${nearest.code}] at ${nearest.distanceNm} NM, drifting ${nearest.driftSpeedKnots} kn toward ${nearest.driftHeadingDeg}°.\n${bergLines}`);
     }
 
     if (ctx.corridors && ctx.corridors.length > 0) {
@@ -67,11 +77,22 @@ function formatTelemetryContext(ctx?: SystemTelemetryContext): string {
     return `\n\n--- CURRENT REAL-TIME SITUATIONAL DATA ---\n${parts.join("\n\n")}\n------------------------------------------\nUse these exact real-time numbers and status when answering questions about current weather, positions, drift forecasts, risks, or ship telemetry.`;
 }
 
-let chatHistory: { role: string; parts: { text: string }[] }[] = [];
+function hazardLabel(count: number): string {
+    return count === 0 ? "no high-hazard contacts" : `${count} high-hazard`;
+}
+let chatHistory: { role: string; parts: { text: string }[] }[] = [];
+const MAX_HISTORY_MESSAGES = 16;
+function pushToHistory(entry: { role: string; parts: { text: string }[] }) {
+    chatHistory.push(entry);
+    // Keep context bounded: drop oldest turns beyond the window
+    if (chatHistory.length > MAX_HISTORY_MESSAGES) {
+        chatHistory = chatHistory.slice(-MAX_HISTORY_MESSAGES);
+    }
+}
 
 export async function sendMessage(userMessage: string, context?: SystemTelemetryContext): Promise<string> {
     try {
-        chatHistory.push({ role: "user", parts: [{ text: userMessage }] });
+        pushToHistory({ role: "user", parts: [{ text: userMessage }] });
 
         const dynamicInstruction = SYSTEM_PROMPT + formatTelemetryContext(context);
 
@@ -82,7 +103,7 @@ export async function sendMessage(userMessage: string, context?: SystemTelemetry
         });
 
         const reply = response.text ?? "Sorry, I couldn't generate a response.";
-        chatHistory.push({ role: "model", parts: [{ text: reply }] });
+        pushToHistory({ role: "model", parts: [{ text: reply }] });
         return reply;
     } catch (error: any) {
         console.error("Gemini API error:", error);

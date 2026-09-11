@@ -29,15 +29,50 @@ PolarPath is an AI-powered maritime navigation platform. By combining satellite,
 
 ## Project Status
 
-> This project is under active development for SIH 2026. Current stage: initial scaffold — data pipeline and forecasting modules are in progress.
+> This project is under active development for SIH 2026.
 
-- [ ] Real sea-ice/ocean data pipeline
-- [ ] Map visualization (ice concentration heatmap)
-- [ ] Baseline route (hardcoded start/end)
-- [ ] Route optimization (A*/Dijkstra over risk grid)
+- [x] Real sea-ice/ocean data pipeline (Copernicus AMSR2 grid, `public/data/seaIce.json`)
+- [x] Map visualization (ice concentration heatmap — 2D Leaflet + 3D Three.js globe)
+- [x] Baseline route (hardcoded start/end)
+- [x] Route optimization (corridor risk scoring; A*/Dijkstra over risk grid in progress)
 - [ ] Sea-ice forecasting model (ConvLSTM/U-Net)
 - [ ] Iceberg trajectory model (physics + ML hybrid)
-- [ ] In-app assistant (Gemini-powered, for explaining forecasts/routes — not for prediction)
+- [x] In-app assistant (Gemini-powered — POLARIS, explains forecasts/routes; not for prediction)
+- [x] Iceberg fleet tracking — 13 contacts with drift vectors, keel drafts, CPA hazard zones
+- [x] Operator modes — LIVE / SIMULATION / STANDBY with distinct telemetry cadence (hotkey: M)
+- [x] Mission settings persistence — units, CPA buffer, SAR cadence, bridge dimming
+
+## Running Locally
+
+```bash
+npm install
+npm run dev      # Vite on http://localhost:3000
+npm run lint     # TypeScript strict check
+```
+
+The app reads `GEMINI_API_KEY`, `APP_URL`, and `GOOGLE_*` from `.env` (see `.env.example`).
+
+### Enabling real Google Sign-In in dev
+
+The official Google button only works when the app runs on an origin registered as an
+**Authorized JavaScript origin** on the OAuth client. By default that is
+`https://www.PolaNav.com`, so on `http://localhost:3000` the app shows an explanatory
+notice and falls back to the local dev bridge sign-in.
+
+To enable the real Google button locally:
+
+1. Open [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials)
+2. Select the OAuth client for this project (ID `584069263560-mhuueak8neiv6t7hefmo6llo6u0gm47c`)
+3. Under **Authorized JavaScript origins**, add `http://localhost:3000`
+   (⚠ origins match **exactly, scheme included** — `https://localhost:3000` and
+   `http://localhost:3000` are separate entries; the dev server runs on **http**)
+4. Reload the app — the official button activates automatically
+
+If the origin is still unregistered, clicking the button surfaces a precise
+`origin_mismatch` error naming the exact origin to add.
+
+Until then, "Sign In as Chief Navigation Officer (Local Bridge)" provides a full-featured
+offline session (labeled `local` provider in the profile menu).
 
 ## Tech Stack
 

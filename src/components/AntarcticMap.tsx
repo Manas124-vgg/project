@@ -335,7 +335,7 @@ export const AntarcticMap: React.FC<AntarcticMapProps> = ({
       }}
     >
       {/* Top Header Bar: Matches NSIDC Satellite Product Layout & Operational Controls */}
-      <div className="min-h-[58px] flex flex-wrap justify-between items-center px-4 py-2 border-b border-[rgba(69,140,224,0.2)] bg-[#071d3a] gap-2 z-10">
+      <div className="min-h-[58px] flex flex-wrap justify-between items-center px-4 py-2 border-b border-[rgba(120,170,240,0.22)] bg-[rgba(120,170,240,0.1)] backdrop-blur-xl gap-2 z-10">
         <div className="flex items-center gap-3">
           <div>
             <div className="card-title mb-0 flex items-center gap-2">
@@ -362,7 +362,7 @@ export const AntarcticMap: React.FC<AntarcticMapProps> = ({
         {/* Center Toolbar: Satellite Mode Switcher + 2D / 3D Toggle */}
         <div className="flex items-center gap-2 flex-wrap">
           {/* NSIDC Satellite Product: Concentration vs Extent */}
-          <div className="flex items-center bg-[#051428] p-0.5 rounded-xl border border-[rgba(56,189,248,0.25)] shadow-sm">
+          <div className="flex items-center bg-[rgba(120,170,240,0.1)] backdrop-blur-md p-0.5 rounded-xl border border-[rgba(56,189,248,0.25)] shadow-sm">
             <button
               onClick={() => setSatelliteProduct('concentration')}
               className={`px-3 py-1 rounded-lg text-[10px] font-space font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -390,7 +390,7 @@ export const AntarcticMap: React.FC<AntarcticMapProps> = ({
           </div>
 
           {/* 2D / 3D View Mode Switcher */}
-          <div className="flex items-center bg-[#051428] p-0.5 rounded-xl border border-[rgba(69,224,208,0.25)]">
+          <div className="flex items-center bg-[rgba(120,170,240,0.1)] backdrop-blur-md p-0.5 rounded-xl border border-[rgba(69,224,208,0.25)]">
             <button
               onClick={() => setViewMode('2d')}
               className={`px-2.5 py-1 rounded-lg text-[10px] font-space font-bold transition-all cursor-pointer flex items-center gap-1 ${
@@ -416,7 +416,7 @@ export const AntarcticMap: React.FC<AntarcticMapProps> = ({
           </div>
 
           {/* Route Corridor Switcher */}
-          <div className="flex items-center gap-1 bg-[#051428] p-0.5 rounded-xl border border-[rgba(165,177,224,0.18)]">
+          <div className="flex items-center gap-1 bg-[rgba(120,170,240,0.1)] backdrop-blur-md p-0.5 rounded-xl border border-[rgba(165,177,224,0.18)]">
             {corridors.map((c) => {
               const isSelected = c.id === selectedCorridorId;
               return (

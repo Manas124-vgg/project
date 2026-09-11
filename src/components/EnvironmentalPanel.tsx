@@ -11,7 +11,7 @@ export const EnvironmentalPanel: React.FC<EnvironmentalPanelProps> = ({
   const [showLiveMetrics, setShowLiveMetrics] = useState<boolean>(true);
 
   return (
-    <div className="bento-card" id="environmental-context-panel">
+    <div className="bento-card p-5" id="environmental-context-panel">
       {/* Header */}
       <div className="flex justify-between items-center pb-3 border-b border-[rgba(165,177,224,0.15)] mb-3">
         <div>

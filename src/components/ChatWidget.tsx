@@ -1,20 +1,34 @@
 import { useState, useRef, useEffect } from "react";
 import { sendMessage, SystemTelemetryContext } from "../services/chatService";
+import { getCurrentUser } from "../services/authService";
 
 interface ChatWidgetProps {
     telemetry?: SystemTelemetryContext;
 }
 
+const CHAT_STORAGE_KEY = "polarnav-chat-history";
+
+// Conversation survives reloads, not just open/close cycles
+function loadStoredMessages(): { from: "user" | "bot"; text: string }[] {
+    try {
+        const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch {
+        return [];
+    }
+}
+
 const QUICK_PROMPTS = [
+    "Rank the top iceberg threats right now",
     "Current weather & wind conditions?",
-    "Which iceberg is closest to our vessel?",
     "Assess safe corridors for navigation",
     "What AI models are used in PS 26059?",
 ];
 
 export function ChatWidget({ telemetry }: ChatWidgetProps) {
     const [open, setOpen] = useState(false);
-    const [messages, setMessages] = useState<{ from: "user" | "bot"; text: string }[]>([]);
+    const [messages, setMessages] = useState<{ from: "user" | "bot"; text: string }[]>(loadStoredMessages);
+    const officer = getCurrentUser();
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -22,6 +36,12 @@ export function ChatWidget({ telemetry }: ChatWidgetProps) {
     useEffect(() => {
         if (open) {
             messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+        // Persist the conversation so it survives reloads
+        try {
+            localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-40)));
+        } catch {
+            /* storage full/blocked — chat still works in-memory */
         }
     }, [messages, open]);
 
@@ -81,13 +101,15 @@ export function ChatWidget({ telemetry }: ChatWidgetProps) {
                 maxWidth: "calc(100vw - 32px)",
                 height: 520,
                 maxHeight: "85vh",
-                border: "1px solid rgba(255,255,255,0.15)",
+                border: "1px solid rgba(196,219,255,0.22)",
                 borderRadius: 14,
                 display: "flex",
                 flexDirection: "column",
-                background: "#0f172a",
                 color: "#f1f5f9",
-                boxShadow: "0 16px 36px rgba(0,0,0,0.6)",
+                background: "rgba(14, 22, 42, 0.72)",
+                backdropFilter: "blur(22px) saturate(1.4)",
+                WebkitBackdropFilter: "blur(22px) saturate(1.4)",
+                boxShadow: "0 16px 36px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.12)",
                 zIndex: 9999,
                 overflow: "hidden",
                 fontFamily: "inherit",
@@ -101,21 +123,23 @@ export function ChatWidget({ telemetry }: ChatWidgetProps) {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    background: "#1e293b",
+                    background: "rgba(30, 41, 59, 0.65)",
+                    backdropFilter: "blur(16px)",
+                    WebkitBackdropFilter: "blur(16px)",
                 }}
             >
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: "20px" }}>🤖</span>
+                    <span style={{ fontSize: "20px" }}>🧊</span>
                     <div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <strong style={{ fontSize: "14px", color: "#f8fafc" }}>PolarNav Assistant</strong>
+                            <strong style={{ fontSize: "14px", color: "#f8fafc" }}>POLARIS Assistant</strong>
                             <span style={{ fontSize: "10px", background: "rgba(56,189,248,0.2)", color: "#38bdf8", padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>
                                 PS 26059
                             </span>
                         </div>
                         <div style={{ fontSize: "11px", color: "#4ade80", display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
                             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80" }} />
-                            Live Telemetry Synced
+                            {telemetry?.icebergs?.length ?? 0} bergs tracked · telemetry live
                         </div>
                     </div>
                 </div>
@@ -143,11 +167,14 @@ export function ChatWidget({ telemetry }: ChatWidgetProps) {
                     display: "flex",
                     flexDirection: "column",
                     gap: 10,
+                    background: "rgba(10, 16, 32, 0.55)",
                 }}
             >
                 {messages.length === 0 && (
                     <div style={{ color: "#94a3b8", fontSize: "12px", textAlign: "center", marginTop: 16 }}>
-                        <p style={{ color: "#f8fafc", fontWeight: 600, marginBottom: 4 }}>Polar Decision Support Active</p>
+                        <p style={{ color: "#f8fafc", fontWeight: 600, marginBottom: 4 }}>
+                            {officer ? `Welcome aboard, ${officer.name.split(' ')[0]}` : "Polar Decision Support Active"}
+                        </p>
                         <p>Ask about live ice conditions, weather, iceberg proximity, or navigation corridors.</p>
                     </div>
                 )}
@@ -159,9 +186,9 @@ export function ChatWidget({ telemetry }: ChatWidgetProps) {
                             textAlign: m.from === "user" ? "right" : "left",
                         }}
                     >
-                        <span
+                            <span
                             style={{
-                                background: m.from === "user" ? "linear-gradient(135deg, #0284c7, #2563eb)" : "#1e293b",
+                                background: m.from === "user" ? "linear-gradient(135deg, #0284c7, #2563eb)" : "rgba(148, 180, 235, 0.12)",
                                 color: "#f8fafc",
                                 padding: "9px 13px",
                                 borderRadius: 12,
@@ -170,7 +197,9 @@ export function ChatWidget({ telemetry }: ChatWidgetProps) {
                                 fontSize: "13px",
                                 lineHeight: "1.5",
                                 textAlign: "left",
-                                border: m.from === "user" ? "none" : "1px solid rgba(255,255,255,0.08)",
+                                border: m.from === "user" ? "none" : "1px solid rgba(196, 219, 255, 0.22)",
+                                backdropFilter: m.from === "user" ? "none" : "blur(12px)",
+                                WebkitBackdropFilter: m.from === "user" ? "none" : "blur(12px)",
                                 whiteSpace: "pre-wrap",
                                 wordBreak: "break-word",
                             }}
@@ -191,15 +220,15 @@ export function ChatWidget({ telemetry }: ChatWidgetProps) {
 
             {/* Quick Prompts (visible when few messages) */}
             {messages.length <= 2 && !loading && (
-                <div style={{ padding: "8px 12px", display: "flex", flexWrap: "wrap", gap: 6, background: "rgba(15,23,42,0.8)", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ padding: "8px 12px", display: "flex", flexWrap: "wrap", gap: 6, background: "rgba(148,180,235,0.08)", borderTop: "1px solid rgba(196,219,255,0.12)" }}>
                     {QUICK_PROMPTS.map((prompt, idx) => (
                         <button
                             key={idx}
                             onClick={() => handleSend(prompt)}
                             style={{
-                                background: "#1e293b",
-                                color: "#38bdf8",
-                                border: "1px solid rgba(56,189,248,0.25)",
+                                background: "rgba(148,180,235,0.12)",
+                                color: "#6ddcff",
+                                border: "1px solid rgba(109,220,255,0.3)",
                                 borderRadius: 20,
                                 padding: "4px 10px",
                                 fontSize: "11px",
@@ -219,7 +248,9 @@ export function ChatWidget({ telemetry }: ChatWidgetProps) {
                     display: "flex",
                     borderTop: "1px solid rgba(255,255,255,0.1)",
                     padding: 10,
-                    background: "#1e293b",
+                    background: "rgba(30, 41, 59, 0.65)",
+                    backdropFilter: "blur(16px)",
+                    WebkitBackdropFilter: "blur(16px)",
                     gap: 8,
                 }}
             >
@@ -227,14 +258,14 @@ export function ChatWidget({ telemetry }: ChatWidgetProps) {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                    placeholder="Ask about live ice, weather, ship status..."
+                    placeholder="Ask about ice threats, weather, corridors..."
                     disabled={loading}
                     style={{
                         flex: 1,
                         padding: "9px 12px",
-                        border: "1px solid rgba(255,255,255,0.15)",
+                        border: "1px solid rgba(196,219,255,0.2)",
                         borderRadius: 8,
-                        background: "#0f172a",
+                        background: "rgba(10, 16, 32, 0.6)",
                         color: "#f8fafc",
                         fontSize: "13px",
                         outline: "none",

@@ -8,7 +8,32 @@ interface TopbarProps {
   onOpenMobileMenu: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
+  systemMode: 'live' | 'simulation' | 'standby';
 }
+
+const MODE_PILL: Record<'live' | 'simulation' | 'standby', { label: string; border: string; bg: string; text: string; dot: string }> = {
+  live: {
+    label: 'Live Stream',
+    border: 'rgba(69,224,208,0.3)',
+    bg: 'rgba(69,224,208,0.06)',
+    text: '#45e0d0',
+    dot: '#45e0d0',
+  },
+  simulation: {
+    label: 'Simulating',
+    border: 'rgba(255,202,114,0.4)',
+    bg: 'rgba(255,202,114,0.08)',
+    text: '#ffca72',
+    dot: '#ffca72',
+  },
+  standby: {
+    label: 'Standby',
+    border: 'rgba(139,124,255,0.4)',
+    bg: 'rgba(139,124,255,0.08)',
+    text: '#c9c2ff',
+    dot: '#8b7cff',
+  },
+};
 
 const sectionLabels: Record<NavSection, { parent: string; title: string }> = {
   overview: { parent: 'Workspace', title: 'Mission Overview' },
@@ -25,7 +50,9 @@ export const Topbar: React.FC<TopbarProps> = ({
   onOpenMobileMenu,
   isFullscreen,
   onToggleFullscreen,
+  systemMode,
 }) => {
+  const pill = MODE_PILL[systemMode];
   const [utcTime, setUtcTime] = useState<string>('--:--:--');
   const [utcDate, setUtcDate] = useState<string>('');
   const [user, setUser] = useState<UserProfile | null>(() => getCurrentUser());
@@ -106,13 +133,25 @@ export const Topbar: React.FC<TopbarProps> = ({
           </strong>
         </div>
 
-        {/* Live Stream Pulse Indicator */}
-        <div className="hidden sm:flex items-center gap-1.5 border border-[rgba(69,224,208,0.3)] rounded-[11px] px-2.5 py-2 bg-[rgba(69,224,208,0.06)] text-[#45e0d0] text-[11px] font-mono shadow-xs">
+        {/* Telemetry Stream Status — reflects the actual system mode */}
+        <div
+          className="hidden sm:flex items-center gap-1.5 border rounded-[11px] px-2.5 py-2 text-[11px] font-mono shadow-xs transition-colors"
+          style={{ borderColor: pill.border, background: pill.bg, color: pill.text }}
+          title={`System mode: ${systemMode} — toggle in the sidebar or press M`}
+        >
           <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#45e0d0] opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#45e0d0]"></span>
+            {systemMode !== 'standby' && (
+              <span
+                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                style={{ background: pill.dot }}
+              ></span>
+            )}
+            <span
+              className="relative inline-flex rounded-full h-2 w-2"
+              style={{ background: pill.dot }}
+            ></span>
           </span>
-          <span className="font-semibold text-[10px] tracking-wider uppercase">Live Stream</span>
+          <span className="font-semibold text-[10px] tracking-wider uppercase">{pill.label}</span>
         </div>
 
         {/* Quick Polar Grid coordinates indicator */}
@@ -148,7 +187,7 @@ export const Topbar: React.FC<TopbarProps> = ({
               </button>
 
               {showUserMenu && (
-                <div className="absolute right-0 mt-2 w-56 rounded-xl border border-[rgba(165,177,224,0.2)] bg-[#0d1020] p-3 shadow-xl z-50 text-xs">
+                <div className="absolute right-0 mt-2 w-56 rounded-xl border border-[rgba(196,219,255,0.24)] bg-[rgba(148,180,235,0.12)] backdrop-blur-2xl p-3 shadow-xl z-50 text-xs">
                   <div className="border-b border-[rgba(165,177,224,0.12)] pb-2 mb-2">
                     <p className="font-semibold text-white font-space truncate">{user.name}</p>
                     <p className="text-[11px] text-[#9297b1] truncate">{user.email}</p>
@@ -157,7 +196,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                     </span>
                   </div>
                   <div className="text-[10px] text-[#666b86] mb-2 font-mono">
-                    Provider: Google OAuth 2.0
+                    Provider: {user.provider === 'google' ? 'Google OAuth 2.0' : 'Local Dev Bridge'}
                   </div>
                   <button
                     onClick={() => {

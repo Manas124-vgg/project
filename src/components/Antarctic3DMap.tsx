@@ -58,11 +58,16 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
   const routeLineRef = useRef<THREE.Line | null>(null);
   const waypointPillarsRef = useRef<THREE.Group | null>(null);
   const proximityAlertRef = useRef<THREE.Mesh | null>(null);
+  const routeFlowMeshesRef = useRef<THREE.Mesh[]>([]);
+  const routeCurveRef = useRef<THREE.CatmullRomCurve3 | null>(null);
+  const selectionRingRef = useRef<THREE.Mesh | null>(null);
 
   // Camera Orbit State
   const isInteractingRef = useRef<boolean>(false);
+  const lastInteractionRef = useRef<number>(0);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isRightClickRef = useRef<boolean>(false);
+  const compassRef = useRef<HTMLSpanElement>(null);
   const sphericalRef = useRef<{ radius: number; theta: number; phi: number }>({
     radius: 140,
     theta: -Math.PI / 4,
@@ -134,7 +139,7 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     scene.fog = new THREE.FogExp2(0x071120, 0.0035);
 
     // CAMERA
-    const camera = new THREE.PerspectiveCamera(45, width / height, 1, 1000);
+    const camera = new THREE.PerspectiveCamera(45, width / height, 1, 2000);
     cameraRef.current = camera;
 
     // RENDERER
@@ -142,9 +147,37 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     rendererRef.current = renderer;
     container.replaceChildren(renderer.domElement);
+
+    // ATMOSPHERE: Southern-hemisphere starfield dome
+    const starCount = 900;
+    const starPositions = new Float32Array(starCount * 3);
+    const starSizes = new Float32Array(starCount);
+    for (let i = 0; i < starCount; i++) {
+      // Stars live on the upper hemisphere only (polar night sky)
+      const azimuth = Math.random() * Math.PI * 2;
+      const elevation = 0.08 + Math.random() * 1.35; // radians above horizon
+      const r = 650;
+      starPositions[i * 3] = r * Math.cos(elevation) * Math.cos(azimuth);
+      starPositions[i * 3 + 1] = r * Math.sin(elevation);
+      starPositions[i * 3 + 2] = r * Math.cos(elevation) * Math.sin(azimuth);
+      starSizes[i] = 0.8 + Math.random() * 2.2;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    starGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+    const starMat = new THREE.PointsMaterial({
+      color: 0xcfe4ff,
+      size: 1.6,
+      sizeAttenuation: false,
+      transparent: true,
+      opacity: 0.85,
+      fog: false,
+    });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
 
     // LIGHTING
     // Ambient soft polar light
@@ -169,6 +202,77 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     const rimLight = new THREE.DirectionalLight(0x45e0d0, 0.5);
     rimLight.position.set(-100, 40, -100);
     scene.add(rimLight);
+
+    // AURORA AUSTRALIS: custom shader curtain on the southern sky
+    const auroraUniforms = { uTime: { value: 0 } };
+    const auroraMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+      uniforms: auroraUniforms,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        varying vec2 vUv;
+        void main() {
+          // Vertical falloff: bright at the curtain base, fading upward
+          float vertical = smoothstep(0.0, 0.25, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
+          // Layered flowing curtains drifting at different speeds
+          float wave1 = sin(vUv.x * 14.0 + uTime * 0.45) * 0.5 + 0.5;
+          float wave2 = sin(vUv.x * 27.0 - uTime * 0.3 + 2.0) * 0.5 + 0.5;
+          float wave3 = sin(vUv.x * 6.0 + uTime * 0.2 + 4.5) * 0.5 + 0.5;
+          float curtain = wave1 * 0.5 + wave2 * 0.3 + wave3 * 0.4;
+          // Shimmering vertical striations
+          float striations = 0.75 + 0.25 * sin(vUv.x * 90.0 + uTime * 1.4 + curtain * 6.0);
+          // Teal-green aurora with violet fringe
+          vec3 col = mix(vec3(0.18, 0.95, 0.62), vec3(0.45, 0.35, 0.95), vUv.y * 1.4);
+          float alpha = vertical * curtain * striations * 0.34;
+          gl_FragColor = vec4(col * alpha, alpha);
+        }
+      `,
+    });
+    const auroraGeo = new THREE.PlaneGeometry(520, 130, 1, 1);
+    const aurora = new THREE.Mesh(auroraGeo, auroraMat);
+    aurora.position.set(0, 95, -230);
+    scene.add(aurora);
+
+    // OCEAN GRATICULE: faint lat/long rings + meridians for navigational context
+    const graticule = new THREE.Group();
+    const gridMat = new THREE.LineBasicMaterial({ color: 0x6ddcff, transparent: true, opacity: 0.08 });
+    [30, 60, 90, 120].forEach((radius) => {
+      const pts: THREE.Vector3[] = [];
+      for (let a = 0; a <= 64; a++) {
+        const t = (a / 64) * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(t) * radius, 0.05, Math.sin(t) * radius));
+      }
+      graticule.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gridMat));
+    });
+    for (let m = 0; m < 12; m++) {
+      const t = (m / 12) * Math.PI * 2;
+      graticule.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(Math.cos(t) * 120, 0.05, Math.sin(t) * 120),
+          new THREE.Vector3(Math.cos(t) * 30, 0.05, Math.sin(t) * 30),
+        ]),
+        gridMat,
+      ));
+    }
+    scene.add(graticule);
+
+    // DISTANT ICE WALL: low fog-bank ring at the horizon so the ocean edge reads as distance
+    const iceWallMat = new THREE.MeshBasicMaterial({ color: 0x1d3350, transparent: true, opacity: 0.5, fog: false });
+    const iceWallGeo = new THREE.CylinderGeometry(178, 178, 6, 64, 1, true);
+    const iceWall = new THREE.Mesh(iceWallGeo, iceWallMat);
+    iceWall.position.y = 2;
+    scene.add(iceWall);
 
     // 2. Translucent Ocean Surface (Y = 0)
     const oceanGeo = new THREE.PlaneGeometry(360, 360, 64, 64);
@@ -245,18 +349,65 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     continentMesh.castShadow = true;
     scene.add(continentMesh);
 
-    // Floating Ice Shelves (Ross & Larsen C) - Flat sheets at Y = 0.5
-    const shelfGeo = new THREE.CircleGeometry(24, 32, Math.PI * 0.8, Math.PI * 0.55);
-    const shelfMat = new THREE.MeshStandardMaterial({
-      color: 0xd6effb,
-      roughness: 0.4,
-      transparent: true,
-      opacity: 0.92,
-    });
-    const rossShelf = new THREE.Mesh(shelfGeo, shelfMat);
-    rossShelf.rotation.x = -Math.PI / 2;
-    rossShelf.position.set(-18, 0.4, -12);
-    scene.add(rossShelf);
+    // Floating Ice Shelves — extruded slabs with real thickness: surface at the waterline,
+    // an exposed ice-front cliff, and a submerged base sinking toward the seabed.
+    const buildIceShelf = (
+      radius: number,
+      thetaStart: number,
+      thetaLength: number,
+      surfaceY: number,
+      depthM: number,
+      pos: { x: number; z: number },
+    ) => {
+      // 1 world unit ≈ 12 m: scale the real-world draft into scene depth
+      const thickness = Math.max(1.2, depthM / 12);
+      const shelfGroup = new THREE.Group();
+
+      // Surface slab
+      const topGeo = new THREE.CylinderGeometry(radius, radius, thickness, 40, 1, false, thetaStart, thetaLength);
+      const topMat = new THREE.MeshStandardMaterial({
+        color: 0xd6effb,
+        roughness: 0.4,
+        transparent: true,
+        opacity: 0.94,
+      });
+      const top = new THREE.Mesh(topGeo, topMat);
+      top.position.y = surfaceY - thickness / 2;
+      top.receiveShadow = true;
+      top.castShadow = true;
+      shelfGroup.add(top);
+
+      // Submerged base: slightly wider, bluer, reaching down toward the seabed
+      const baseGeo = new THREE.CylinderGeometry(radius * 1.04, radius * 0.9, thickness * 2.6, 40, 1, false, thetaStart, thetaLength);
+      const baseMat = new THREE.MeshPhysicalMaterial({
+        color: 0x5db3e8,
+        roughness: 0.5,
+        transmission: 0.35,
+        transparent: true,
+        opacity: 0.5,
+      });
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.y = surfaceY - thickness - (thickness * 2.6) / 2;
+      shelfGroup.add(base);
+
+      // Dredged grounding line hint: darker ring at the keel floor
+      const groundGeo = new THREE.RingGeometry(radius * 0.85, radius * 1.15, 40, 1, thetaStart, thetaLength);
+      const groundMat = new THREE.MeshBasicMaterial({ color: 0x0a1a30, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+      const grounding = new THREE.Mesh(groundGeo, groundMat);
+      grounding.rotation.x = -Math.PI / 2;
+      grounding.position.y = -depthM / 12 + 0.1;
+      shelfGroup.add(grounding);
+
+      shelfGroup.position.set(pos.x, 0, pos.z);
+      return shelfGroup;
+    };
+
+    // Ronne–Filchner shelf to the southwest (330 m class) and Larsen C to the northeast (180 m class)
+    const ronneShelf = buildIceShelf(26, Math.PI * 0.8, Math.PI * 0.55, 0.5, 330, { x: -30, z: -16 });
+    const larsenShelf = buildIceShelf(16, Math.PI * 1.45, Math.PI * 0.4, 0.45, 180, { x: 42, z: 28 });
+    scene.add(ronneShelf);
+    scene.add(larsenShelf);
+    const rossShelf = ronneShelf;
 
     // 4. Seasonal Sea Ice Extent Dynamic Mesh
     const seaIceGeo = new THREE.RingGeometry(38, 95, 48, 8);
@@ -301,9 +452,9 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     mastMesh.position.set(0, 2.3, -0.4);
     vesselGroup.add(mastMesh);
 
-    // Beacon light sphere
+    // Beacon light sphere (material made transparent so the loop can pulse it)
     const beaconGeo = new THREE.SphereGeometry(0.3, 8, 8);
-    const beaconMat = new THREE.MeshBasicMaterial({ color: 0x45e0d0 });
+    const beaconMat = new THREE.MeshBasicMaterial({ color: 0x45e0d0, transparent: true });
     const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
     beaconMesh.position.set(0, 3.4, -0.4);
     vesselGroup.add(beaconMesh);
@@ -369,9 +520,19 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
 
     // 9. Render & Animation Loop
     let animationFrameId: number;
+    const clockStart = performance.now();
+
+    // Freeze ocean surface vertices so the swell can undulate them each frame
+    const oceanBasePositions = Float32Array.from(oceanGeo.attributes.position.array);
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
+      const t = (performance.now() - clockStart) / 1000;
+
+      // Idle auto-orbit: after 4s without input the camera drifts around the scene
+      if (!isInteractingRef.current && performance.now() - lastInteractionRef.current > 4000) {
+        sphericalRef.current.theta += 0.0007;
+      }
 
       // Update camera position from spherical coordinates
       const { radius, theta, phi } = sphericalRef.current;
@@ -382,6 +543,53 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
       camera.position.z = target.z + radius * Math.sin(phi) * Math.cos(theta);
       camera.lookAt(target);
 
+      // Ocean swell: gentle multi-directional undulation of the surface mesh
+      const oceanPos = oceanGeo.attributes.position;
+      for (let i = 0; i < oceanPos.count; i++) {
+        const bx = oceanBasePositions[i * 3];
+        const by = oceanBasePositions[i * 3 + 1];
+        oceanPos.setZ(
+          i,
+          Math.sin(bx * 0.06 + t * 0.9) * 0.35 +
+          Math.cos(by * 0.05 - t * 0.7) * 0.3 +
+          Math.sin((bx + by) * 0.03 + t * 0.45) * 0.4,
+        );
+      }
+      oceanPos.needsUpdate = true;
+      oceanGeo.computeVertexNormals();
+
+      // Sky life: aurora shimmer + slow starfield rotation
+      auroraUniforms.uTime.value = t;
+      stars.rotation.y = t * 0.004;
+
+      // Vessel beacon pulse
+      const pulse = 0.55 + Math.sin(t * 3.2) * 0.45;
+      beaconMesh.material.opacity = pulse;
+
+      // Route chevron flow: markers drifting along the corridor toward the destination
+      const flowCurve = routeCurveRef.current;
+      if (flowCurve) {
+        routeFlowMeshesRef.current.forEach((chevron) => {
+          const offset = ((chevron.userData.flowOffset as number) + t * 0.045) % 1;
+          const p = flowCurve.getPointAt(offset);
+          const tangent = flowCurve.getTangentAt(offset);
+          chevron.position.set(p.x, 1.1, p.z);
+          chevron.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent);
+          (chevron.material as THREE.MeshBasicMaterial).opacity = 0.25 + Math.sin(offset * Math.PI) * 0.55;
+        });
+      }
+
+      // Selection ring pulse + gentle scale breathe
+      const selRing = selectionRingRef.current;
+      if (selRing) {
+        const s = 1 + Math.sin(t * 2.6) * 0.08;
+        selRing.scale.set(s, s, 1);
+        (selRing.material as THREE.MeshBasicMaterial).opacity = 0.55 + Math.sin(t * 2.6) * 0.25;
+      }
+
+      // Ice shelf slow bob (floating ice breathes with the swell)
+      rossShelf.position.y = 0.4 + Math.sin(t * 0.6) * 0.12;
+
       // Billboard all station flags towards camera
       stationsGroup.children.forEach((sg) => {
         const flag = sg.children[1];
@@ -391,6 +599,14 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
       // Pulse proximity alert if active
       if (proximityAlertRef.current && proximityAlertRef.current.visible) {
         proximityAlertRef.current.rotation.y += 0.02;
+        const alertMat = proximityAlertRef.current.material as THREE.MeshBasicMaterial;
+        alertMat.opacity = 0.18 + Math.abs(Math.sin(t * 2.4)) * 0.16;
+      }
+
+      // Compass HUD: current camera bearing over the polar grid
+      if (compassRef.current) {
+        const bearing = Math.round(((theta * 180) / Math.PI) % 360 + 360) % 360;
+        compassRef.current.textContent = `${String(bearing).padStart(3, '0')}°`;
       }
 
       renderer.render(scene, camera);
@@ -409,10 +625,27 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
+    // Native non-passive wheel listener so preventDefault works (React's onWheel is passive)
+    const nativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY > 0 ? 1.08 : 0.92;
+      sphericalRef.current.radius = Math.max(20, Math.min(240, sphericalRef.current.radius * zoomFactor));
+      lastInteractionRef.current = performance.now();
+    };
+    container.addEventListener('wheel', nativeWheel, { passive: false });
+
     // Cleanup
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
+      container.removeEventListener('wheel', nativeWheel);
+      scene.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else if (mat) mat.dispose();
+      });
       renderer.dispose();
     };
   }, []);
@@ -425,6 +658,20 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     // Clear old iceberg groups
     icebergMeshesRef.current.forEach((grp) => scene.remove(grp));
     icebergMeshesRef.current.clear();
+    if (selectionRingRef.current) {
+      scene.remove(selectionRingRef.current);
+      selectionRingRef.current = null;
+    }
+
+    // Deterministic pseudo-random from iceberg id: stable variety across re-renders
+    const seedFrom = (id: string) => {
+      let h = 0;
+      for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+      return () => {
+        h = (h * 1664525 + 1013904223) | 0;
+        return ((h >>> 8) & 0xffff) / 0xffff;
+      };
+    };
 
     icebergs.forEach((berg) => {
       // Calculate projected position in 3D
@@ -434,25 +681,48 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
 
       const pos = svgTo3D(berg.svgX + simDeltaX, berg.svgY + simDeltaY);
       const isSelected = berg.id === selectedIcebergId;
+      const rand = seedFrom(berg.id);
+
+      // Per-berg silhouette variation so the fleet doesn't look cloned
+      const scaleSx = 0.75 + rand() * 0.7;
+      const scaleSz = 0.75 + rand() * 0.7;
+      const scaleH = 0.7 + rand() * 0.9;
+      const crownRotation = rand() * Math.PI * 2;
+      const pinnacles = 1 + Math.floor(rand() * 2);
 
       const bergGroup = new THREE.Group();
       bergGroup.position.set(pos.x, 0, pos.z);
 
       // Above-Water Crown (Faceted irregular ice geometry)
       const crownGeo = new THREE.ConeGeometry(2.5, 3.8, 6);
-      crownGeo.scale(1.2, 1.0, 0.9);
+      crownGeo.scale(1.2 * scaleSx, 1.0 * scaleH, 0.9 * scaleSz);
       const crownMat = new THREE.MeshStandardMaterial({
-        color: isSelected ? 0xffffff : 0xffca72,
+        color: isSelected ? 0xffffff : 0xeef6fd,
         roughness: 0.35,
         metalness: 0.1,
-        emissive: isSelected ? 0xffca72 : 0x000000,
-        emissiveIntensity: isSelected ? 0.3 : 0,
+        emissive: isSelected ? 0x45e0d0 : 0x000000,
+        emissiveIntensity: isSelected ? 0.35 : 0,
       });
       const crownMesh = new THREE.Mesh(crownGeo, crownMat);
-      crownMesh.position.y = 1.9;
+      crownMesh.position.y = 1.9 * scaleH;
+      crownMesh.rotation.y = crownRotation;
       crownMesh.castShadow = true;
       crownMesh.userData = { type: 'iceberg', id: berg.id };
       bergGroup.add(crownMesh);
+
+      // Secondary pinnacle(s): smaller satellite peaks for a natural skyline
+      for (let p = 0; p < pinnacles; p++) {
+        const pScale = 0.45 + rand() * 0.35;
+        const pGeo = new THREE.ConeGeometry(1.4, 2.6, 5);
+        pGeo.scale(1, pScale * 1.6, 1);
+        const pMesh = new THREE.Mesh(pGeo, crownMat);
+        const ang = rand() * Math.PI * 2;
+        pMesh.position.set(Math.cos(ang) * 1.6 * scaleSx, 1.1 + pScale * 1.1, Math.sin(ang) * 1.4 * scaleSz);
+        pMesh.rotation.y = rand() * Math.PI;
+        pMesh.castShadow = true;
+        pMesh.userData = { type: 'iceberg', id: berg.id };
+        bergGroup.add(pMesh);
+      }
 
       // Submerged Keel (Massive underwater ice draft extending down!)
       if (showUnderKeels) {
@@ -478,6 +748,23 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
 
       scene.add(bergGroup);
       icebergMeshesRef.current.set(berg.id, bergGroup);
+
+      // Pulsing selection ring at the waterline of the chosen berg
+      if (isSelected) {
+        const ringGeo = new THREE.RingGeometry(4.2, 5.2, 40);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0x45e0d0,
+          transparent: true,
+          opacity: 0.8,
+          side: THREE.DoubleSide,
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(pos.x, 0.25, pos.z);
+        ring.userData.isSelectionRing = true;
+        scene.add(ring);
+        selectionRingRef.current = ring;
+      }
     });
   }, [icebergs, simulationHour, selectedIcebergId, showUnderKeels]);
 
@@ -511,9 +798,10 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     if (!scene) return;
 
     if (routeLineRef.current) scene.remove(routeLineRef.current);
-    if (waypointPillarsRef.current) {
-      waypointPillarsRef.current.clear();
-    }
+    // Clear chevron flow meshes
+    routeFlowMeshesRef.current.forEach((m) => scene.remove(m));
+    routeFlowMeshesRef.current = [];
+    routeCurveRef.current = null;
 
     // Generate smooth 3D spline through active waypoints
     const points3D = activeWaypoints.map((wp) => {
@@ -522,17 +810,32 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     });
 
     if (points3D.length >= 2) {
+      // Glowing tube: a real-width route ribbon that reads at any camera angle
+      // (the old 1px LineBasicMaterial collapsed to near-invisible when viewed end-on)
       const curve = new THREE.CatmullRomCurve3(points3D);
-      const splinePoints = curve.getPoints(80);
-      const routeGeo = new THREE.BufferGeometry().setFromPoints(splinePoints);
+      routeCurveRef.current = curve;
       const routeColor = selectedCorridorId === 'corridor-b' ? 0xffca72 : selectedCorridorId === 'corridor-c' ? 0x8b7cff : 0x45e0d0;
-      const routeMat = new THREE.LineBasicMaterial({ color: routeColor, linewidth: 2 });
-      const routeLine = new THREE.Line(routeGeo, routeMat);
+      const tubeGeo = new THREE.TubeGeometry(curve, 80, 0.45, 10, false);
+      const tubeMat = new THREE.MeshBasicMaterial({ color: routeColor, transparent: true, opacity: 0.85 });
+      const routeLine = new THREE.Mesh(tubeGeo, tubeMat);
       scene.add(routeLine);
-      routeLineRef.current = routeLine;
+      routeLineRef.current = routeLine as unknown as THREE.Line;
+
+      // Animated chevron flow: small cones drifting along the curve toward the destination
+      const flowCount = 14;
+      const flowMeshes: THREE.Mesh[] = [];
+      const flowGeo = new THREE.ConeGeometry(0.55, 1.6, 6);
+      for (let i = 0; i < flowCount; i++) {
+        const chevronMat = new THREE.MeshBasicMaterial({ color: routeColor, transparent: true, opacity: 0.7 });
+        const chevron = new THREE.Mesh(flowGeo, chevronMat);
+        chevron.userData.flowOffset = i / flowCount;
+        scene.add(chevron);
+        routeFlowMeshesRef.current.push(chevron);
+      }
     }
 
     // Add vertical waypoint light pillars
+    if (waypointPillarsRef.current) waypointPillarsRef.current.clear();
     activeWaypoints.forEach((wp) => {
       const pos = svgTo3D(wp.svgX, wp.svgY);
       const pillarGeo = new THREE.CylinderGeometry(0.2, 0.2, 8, 8);
@@ -560,6 +863,7 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
   // Camera Presets
   const applyCameraPreset = (preset: 'orbit' | 'vessel' | 'peninsula' | 'iceberg') => {
     setCameraPreset(preset);
+    lastInteractionRef.current = performance.now();
     if (preset === 'orbit') {
       targetRef.current.set(0, 0, 0);
       sphericalRef.current = { radius: 140, theta: -Math.PI / 4, phi: Math.PI / 3.5 };
@@ -581,6 +885,7 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     isInteractingRef.current = true;
     isRightClickRef.current = e.button === 2;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
+    lastInteractionRef.current = performance.now();
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -589,7 +894,7 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     const deltaX = e.clientX - dragStartRef.current.x;
     const deltaY = e.clientY - dragStartRef.current.y;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
-
+    lastInteractionRef.current = performance.now();
     if (isRightClickRef.current) {
       // Pan camera target in X/Z plane
       const panSpeed = 0.18;
@@ -632,10 +937,29 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
     }
   };
 
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY > 0 ? 1.08 : 0.92;
-    sphericalRef.current.radius = Math.max(20, Math.min(240, sphericalRef.current.radius * zoomFactor));
+  // Double-click: smart-focus the camera onto a clicked iceberg
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    if (!mountRef.current || !cameraRef.current || !sceneRef.current) return;
+    const rect = mountRef.current.getBoundingClientRect();
+    mouseRef.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouseRef.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+    const intersects = raycasterRef.current.intersectObjects(sceneRef.current.children, true);
+    for (const hit of intersects) {
+      const data = hit.object.userData;
+      if (data?.type === 'iceberg') {
+        const berg = icebergs.find((b) => b.id === data.id);
+        if (berg) {
+          const pos = svgTo3D(berg.svgX, berg.svgY);
+          targetRef.current.set(pos.x, 0, pos.z);
+          sphericalRef.current = { ...sphericalRef.current, radius: 35 };
+          setCameraPreset('iceberg');
+          onSelectIceberg(berg.id);
+          lastInteractionRef.current = performance.now();
+        }
+        break;
+      }
+    }
   };
 
   return (
@@ -647,13 +971,14 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onWheel={handleWheel}
+        onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
 
       {/* 3D Camera Preset Toolbar */}
       <div className="absolute top-3 left-4 z-20 flex items-center gap-1.5 bg-[rgba(6,12,24,0.92)] border border-[rgba(165,177,224,0.18)] px-2.5 py-1.5 rounded-xl text-xs backdrop-blur-md">
         <span className="text-[10px] uppercase font-mono text-[#8892b0] pr-1">3D Views:</span>
+        <span ref={compassRef} className="text-[10px] font-mono text-[#6ddcff] px-1.5 border-r border-[rgba(165,177,224,0.2)] mr-0.5" title="Camera bearing">000°</span>
         <button
           onClick={() => applyCameraPreset('orbit')}
           className={`px-2 py-1 rounded-md text-[10px] font-mono transition-all cursor-pointer ${
@@ -734,7 +1059,9 @@ export const Antarctic3DMap: React.FC<Antarctic3DMapProps> = ({
         <span>·</span>
         <span>Right-click: Pan</span>
         <span>·</span>
-        <span>Scroll: Zoom In/Out</span>
+        <span>Scroll: Zoom</span>
+        <span>·</span>
+        <span>Dbl-click berg: Focus</span>
       </div>
 
       {/* Live 48h Drift Simulation Scrubber (Bottom Right) */}

@@ -19,6 +19,7 @@ import { SensorArrayLog } from './components/SensorArrayLog';
 import { Footer } from './components/Footer';
 import ChatWidget from './components/ChatWidget';
 import { fetchLiveAntarcticWeather } from './services/weatherService';
+import { getSettings, onSettingsChanged } from './services/settingsService';
 
 // Section Views
 import { IceConditionsView } from './components/views/IceConditionsView';
@@ -30,9 +31,22 @@ import { SystemSettingsView } from './components/views/SystemSettingsView';
 
 export default function App() {
   const [currentSection, setCurrentSection] = useState<NavSection>('overview');
-  const [systemMode, setSystemMode] = useState<'live' | 'simulation' | 'standby'>('live');
+  const [systemMode, setSystemMode] = useState<'live' | 'simulation' | 'standby'>(() => {
+    // Restore the operator's last session mode
+    const saved = localStorage.getItem('polarnav-system-mode');
+    return saved === 'simulation' || saved === 'standby' ? saved : 'live';
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  // Persist mode across reloads
+  useEffect(() => {
+    localStorage.setItem('polarnav-system-mode', systemMode);
+  }, [systemMode]);
+
+  // Bridge night-dimming (Settings view) — dims the whole command shell
+  const [bridgeDimming, setBridgeDimming] = useState<boolean>(() => getSettings().bridgeDimming);
+  useEffect(() => onSettingsChanged((s) => setBridgeDimming(s.bridgeDimming)), []);
 
   // Map layer controls
   const [mapLayers, setMapLayers] = useState<MapLayers>({
@@ -120,16 +134,21 @@ export default function App() {
     };
   }, []);
 
-  // Real-time live telemetry stream
+  // Telemetry stream: cadence and jitter depend on the system mode.
+  //   live       — gentle real-time drift every 8s (operational truth)
+  //   simulation — accelerated 48h-style forecast playback every 2.5s, larger deltas
+  //   standby    — displays frozen; sensors idle
   useEffect(() => {
-    if (systemMode !== 'live') return;
+    if (systemMode === 'standby') return;
+    const tickMs = systemMode === 'simulation' ? 2500 : 8000;
+    const drift = systemMode === 'simulation' ? 2.2 : 1;
 
     const streamInterval = setInterval(() => {
       // 1. Vessel dynamic fluctuations
       setVessel((v) => {
-        const speedDelta = Number((Math.random() * 0.4 - 0.2).toFixed(1));
-        const newSpeed = Math.max(8.5, Math.min(12.5, Number((v.speedKnots + speedDelta).toFixed(1))));
-        const headingDelta = Math.floor(Math.random() * 3 - 1);
+        const speedDelta = Number((Math.random() * 0.4 * drift - 0.2 * drift).toFixed(1));
+        const newSpeed = Math.max(8.5, Math.min(systemMode === 'simulation' ? 14.5 : 12.5, Number((v.speedKnots + speedDelta).toFixed(1))));
+        const headingDelta = Math.floor(Math.random() * 3 * drift - 1 * drift);
         const newHeading = (v.heading + headingDelta + 360) % 360;
         const strainDelta = Math.floor(Math.random() * 3 - 1);
         const newStrain = Math.min(58, Math.max(28, v.hullStrainPercent + strainDelta));
@@ -144,7 +163,7 @@ export default function App() {
 
       // 2. Micro-updates to environment
       setEnvironment((env) => {
-        const windDrift = Math.floor(Math.random() * 3 - 1);
+        const windDrift = Math.floor(Math.random() * 3 * drift - 1 * drift);
         return {
           ...env,
           windSpeedKn: Math.max(10, Math.min(45, env.windSpeedKn + windDrift)),
@@ -154,14 +173,14 @@ export default function App() {
       // 3. Keep iceberg telemetry stable (no coordinate jitter)
       setIcebergs((prevBergs) =>
         prevBergs.map((b) => {
-          const speedFlux = Number((Math.random() * 0.04 - 0.02).toFixed(2));
+          const speedFlux = Number((Math.random() * 0.04 * drift - 0.02 * drift).toFixed(2));
           return {
             ...b,
             driftSpeedKnots: Math.max(0.4, Number((b.driftSpeedKnots + speedFlux).toFixed(1))),
           };
         })
       );
-    }, 8000);
+    }, tickMs);
 
     return () => clearInterval(streamInterval);
   }, [systemMode]);
@@ -172,6 +191,12 @@ export default function App() {
       if (e.key === 'Escape') {
         setMobileMenuOpen(false);
         setSelectedIcebergId(null);
+      }
+      // M: cycle system mode (live -> simulation -> standby -> live)
+      if ((e.key === 'm' || e.key === 'M') &&
+          document.activeElement?.tagName !== 'INPUT' &&
+          document.activeElement?.tagName !== 'TEXTAREA') {
+        setSystemMode((prev) => (prev === 'live' ? 'simulation' : prev === 'simulation' ? 'standby' : 'live'));
       }
       if (e.key === 'f' || e.key === 'F') {
         if (
@@ -188,7 +213,10 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen flex bg-[#080914] text-[#f1f2fa] relative selection:bg-[#45e0d0] selection:text-[#080914]">
+    <div
+      className="min-h-screen flex bg-[#080914] text-[#f1f2fa] relative selection:bg-[#45e0d0] selection:text-[#080914] transition-[filter] duration-500"
+      style={bridgeDimming ? { filter: 'brightness(0.55) saturate(0.85)' } : undefined}
+    >
       {/* Background ambient radial gradients */}
       <div
         className="fixed inset-0 pointer-events-none z-0 opacity-40"
@@ -222,6 +250,7 @@ export default function App() {
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           isFullscreen={isFullscreen}
           onToggleFullscreen={handleToggleFullscreen}
+          systemMode={systemMode}
         />
 
         {/* Section Route Switching */}

@@ -9,3 +9,6 @@ coverage/
 .copernicusmarine/
 .copernicusmarine*
 *.nc
+
+# Freebuff agent runtime (local preview logs, project ids)
+.freebuff/

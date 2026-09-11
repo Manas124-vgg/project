@@ -1,24 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { GOOGLE_CONFIG, getCurrentUser, logout, onAuthStateChanged, UserProfile } from '../../services/authService';
 import { GoogleAuthModal } from '../GoogleAuthModal';
+import { MissionSettings, getSettings, updateSettings } from '../../services/settingsService';
+import { isGeminiConfigured } from '../../services/chatService';
 
 export const SystemSettingsView: React.FC = () => {
-  const [distanceUnit, setDistanceUnit] = useState<'nm' | 'km'>('nm');
-  const [speedUnit, setSpeedUnit] = useState<'knots' | 'ms'>('knots');
-  const [cpaThreshold, setCpaThreshold] = useState<number>(25);
-  const [sarRefreshInterval, setSarRefreshInterval] = useState<string>('30');
-  const [soundAlerts, setSoundAlerts] = useState<boolean>(true);
-  const [bridgeDimming, setBridgeDimming] = useState<boolean>(false);
+  // Settings persist to localStorage and broadcast to consumers via settingsService
+  const [settings, setSettingsState] = useState<MissionSettings>(() => getSettings());
   const [savedNotice, setSavedNotice] = useState<boolean>(false);
   const [user, setUser] = useState<UserProfile | null>(() => getCurrentUser());
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const geminiReady = isGeminiConfigured();
 
   useEffect(() => {
     const unsub = onAuthStateChanged((newUser) => setUser(newUser));
     return unsub;
   }, []);
 
+  const patch = (p: Partial<MissionSettings>) => setSettingsState(updateSettings(p));
+
   const handleSave = () => {
+    // Settings are applied on change; Save confirms the cached state explicitly
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 2500);
   };
@@ -61,17 +63,17 @@ export const SystemSettingsView: React.FC = () => {
               </div>
               <div className="flex border border-[rgba(165,177,224,0.15)] rounded-lg overflow-hidden font-mono text-[11px]">
                 <button
-                  onClick={() => setDistanceUnit('nm')}
+                  onClick={() => patch({ distanceUnit: 'nm' })}
                   className={`px-3 py-1 cursor-pointer transition-colors ${
-                    distanceUnit === 'nm' ? 'bg-[#45e0d0] text-[#080914] font-bold' : 'text-[#9297b1]'
+                    settings.distanceUnit === 'nm' ? 'bg-[#45e0d0] text-[#080914] font-bold' : 'text-[#9297b1]'
                   }`}
                 >
                   NM
                 </button>
                 <button
-                  onClick={() => setDistanceUnit('km')}
+                  onClick={() => patch({ distanceUnit: 'km' })}
                   className={`px-3 py-1 cursor-pointer transition-colors ${
-                    distanceUnit === 'km' ? 'bg-[#45e0d0] text-[#080914] font-bold' : 'text-[#9297b1]'
+                    settings.distanceUnit === 'km' ? 'bg-[#45e0d0] text-[#080914] font-bold' : 'text-[#9297b1]'
                   }`}
                 >
                   KM
@@ -86,17 +88,17 @@ export const SystemSettingsView: React.FC = () => {
               </div>
               <div className="flex border border-[rgba(165,177,224,0.15)] rounded-lg overflow-hidden font-mono text-[11px]">
                 <button
-                  onClick={() => setSpeedUnit('knots')}
+                  onClick={() => patch({ speedUnit: 'knots' })}
                   className={`px-3 py-1 cursor-pointer transition-colors ${
-                    speedUnit === 'knots' ? 'bg-[#45e0d0] text-[#080914] font-bold' : 'text-[#9297b1]'
+                    settings.speedUnit === 'knots' ? 'bg-[#45e0d0] text-[#080914] font-bold' : 'text-[#9297b1]'
                   }`}
                 >
                   Knots
                 </button>
                 <button
-                  onClick={() => setSpeedUnit('ms')}
+                  onClick={() => patch({ speedUnit: 'ms' })}
                   className={`px-3 py-1 cursor-pointer transition-colors ${
-                    speedUnit === 'ms' ? 'bg-[#45e0d0] text-[#080914] font-bold' : 'text-[#9297b1]'
+                    settings.speedUnit === 'ms' ? 'bg-[#45e0d0] text-[#080914] font-bold' : 'text-[#9297b1]'
                   }`}
                 >
                   m/s
@@ -129,7 +131,7 @@ export const SystemSettingsView: React.FC = () => {
                   <span className="text-[#9297b1] text-[11px]">Trigger alarm when iceberg contacts enter zone</span>
                 </div>
                 <span className="font-space font-bold text-[#ffca72] text-sm font-mono">
-                  {cpaThreshold} nm
+                  {settings.cpaThresholdNm} nm
                 </span>
               </div>
               <input
@@ -137,8 +139,8 @@ export const SystemSettingsView: React.FC = () => {
                 min="10"
                 max="50"
                 step="5"
-                value={cpaThreshold}
-                onChange={(e) => setCpaThreshold(Number(e.target.value))}
+                value={settings.cpaThresholdNm}
+                onChange={(e) => patch({ cpaThresholdNm: Number(e.target.value) })}
                 className="w-full accent-[#ffca72] cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-[#666b86] font-mono mt-1">
@@ -154,8 +156,8 @@ export const SystemSettingsView: React.FC = () => {
                 <span className="text-[#9297b1] text-[11px]">Synthetic Aperture Radar satellite pass ingest</span>
               </div>
               <select
-                value={sarRefreshInterval}
-                onChange={(e) => setSarRefreshInterval(e.target.value)}
+                value={String(settings.sarRefreshMinutes)}
+                onChange={(e) => patch({ sarRefreshMinutes: Number(e.target.value) })}
                 className="bg-[rgba(255,255,255,0.05)] border border-[rgba(165,177,224,0.15)] rounded-lg px-2.5 py-1 text-xs text-[#f1f2fa] font-mono focus:outline-hidden"
               >
                 <option value="15">15 Minutes</option>
@@ -171,8 +173,8 @@ export const SystemSettingsView: React.FC = () => {
               </div>
               <input
                 type="checkbox"
-                checked={bridgeDimming}
-                onChange={(e) => setBridgeDimming(e.target.checked)}
+                checked={settings.bridgeDimming}
+                onChange={(e) => patch({ bridgeDimming: e.target.checked })}
                 className="w-4 h-4 accent-[#45e0d0] cursor-pointer"
               />
             </div>
@@ -190,8 +192,14 @@ export const SystemSettingsView: React.FC = () => {
                 Active configuration for Gemini Decision Support and Google Cloud OAuth 2.0
               </p>
             </div>
-            <span className="px-2.5 py-1 rounded-full bg-[rgba(69,224,208,0.12)] border border-[rgba(69,224,208,0.25)] text-[#45e0d0] text-[10px] font-mono font-semibold">
-              Live Connected
+            <span
+              className={`px-2.5 py-1 rounded-full border text-[10px] font-mono font-semibold ${
+                geminiReady
+                  ? 'bg-[rgba(69,224,208,0.12)] border-[rgba(69,224,208,0.25)] text-[#45e0d0]'
+                  : 'bg-[rgba(255,202,114,0.12)] border-[rgba(255,202,114,0.3)] text-[#ffca72]'
+              }`}
+            >
+              {geminiReady ? 'Live Connected' : 'Degraded — see below'}
             </span>
           </div>
 
@@ -207,9 +215,15 @@ export const SystemSettingsView: React.FC = () => {
               </p>
               <div className="pt-2 border-t border-[rgba(165,177,224,0.08)]">
                 <span className="text-[10px] text-[#666b86] block uppercase tracking-wider font-mono">API Key Status</span>
-                <span className="font-mono text-[#66e2a3] text-[11px] font-medium flex items-center gap-1.5 mt-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#66e2a3]"></span>
-                  Active (Configured from .env)
+                <span
+                  className={`font-mono text-[11px] font-medium flex items-center gap-1.5 mt-0.5 ${
+                    geminiReady ? 'text-[#66e2a3]' : 'text-[#ffca72]'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${geminiReady ? 'bg-[#66e2a3]' : 'bg-[#ffca72]'}`}
+                  ></span>
+                  {geminiReady ? 'Active (Configured from .env)' : 'Missing — assistant replies disabled'}
                 </span>
               </div>
             </div>

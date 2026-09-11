@@ -100,7 +100,7 @@ export const SeaIceChart: React.FC = () => {
   }[activeMetric];
 
   return (
-    <div className="bento-card overflow-hidden" id="environmental-trend-panel">
+    <div className="bento-card p-5 overflow-hidden" id="environmental-trend-panel">
       {/* Header */}
       <div className="flex justify-between items-center px-5 py-3.5 border-b border-[rgba(165,177,224,0.15)] bg-[rgba(8,9,20,0.4)]">
         <div>

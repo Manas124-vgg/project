@@ -1,7 +1,9 @@
-import { useEffect, useState, useMemo } from "react";
-import { MapContainer, TileLayer, Rectangle, CircleMarker, Popup, useMap } from "react-leaflet";
+import { useEffect, useState, useMemo, Fragment } from "react";
+import { MapContainer, TileLayer, Rectangle, CircleMarker, Popup, useMap, Marker } from "react-leaflet";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getSeaIceData, getIcebergs, IceGridPoint, Iceberg } from "../services/iceDataService";
+import { getSettings, onSettingsChanged } from "../services/settingsService";
 
 interface IceMapProps {
   height?: string;
@@ -101,6 +103,12 @@ export function IceMap({ height = "480px" }: IceMapProps) {
   const [icebergs, setIcebergs] = useState<Iceberg[]>([]);
   const [basemap, setBasemap] = useState<"satellite" | "dark" | "ocean">("satellite");
   const [selectedCell, setSelectedCell] = useState<IceGridPoint | null>(null);
+  // Simulated own-ship position near the Weddell approach (matches the dashboard vessel)
+  const vesselPos = useMemo(() => ({ lat: -64.42, lon: -57.18 }), []);
+  // Operator's CPA buffer (settings view) scales the hazard standoff rings
+  const [cpaNm, setCpaNm] = useState<number>(() => getSettings().cpaThresholdNm);
+
+  useEffect(() => onSettingsChanged((s) => setCpaNm(s.cpaThresholdNm)), []);
 
   useEffect(() => {
     getSeaIceData().then((pts) => {
@@ -126,14 +134,46 @@ export function IceMap({ height = "480px" }: IceMapProps) {
     };
   }, [gridPoints]);
 
+  // Iceberg markers rendered as live radar contacts: pulsing ring, drift vector, ID label
+  const bergIcons = useMemo(() => {
+    const icons = new Map<string, L.DivIcon>();
+    icebergs.forEach((berg) => {
+      const isGiant = berg.sizeKm > 10;
+      const ringColor = isGiant ? "#ffa502" : "#ff453a";
+      // Deterministic pseudo-random drift bearing from the berg id (stable across renders)
+      let hash = 0;
+      for (let c = 0; c < berg.id.length; c++) hash = (hash * 31 + berg.id.charCodeAt(c)) | 0;
+      const driftDeg = ((hash >>> 4) % 360 + 360) % 360;
+      const sizePx = isGiant ? 26 : 20;
+      icons.set(
+        berg.id,
+        L.divIcon({
+          className: "berg-marker-wrapper",
+          iconSize: [sizePx, sizePx],
+          iconAnchor: [sizePx / 2, sizePx / 2],
+          html: `
+            <div class="berg-marker ${isGiant ? "berg-giant" : ""}" style="--berg-ring: ${ringColor}">
+              <span class="berg-ping"></span>
+              <span class="berg-core"></span>
+              <span class="berg-arrow" style="transform: rotate(${driftDeg}deg)"></span>
+              <span class="berg-label">${berg.id}</span>
+            </div>`,
+        }),
+      );
+    });
+    return icons;
+  }, [icebergs]);
+
   const tileConfigs = {
     satellite: {
       url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
       attribution: "&copy; Esri & NASA World Imagery",
     },
     dark: {
-      url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-      attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+      // CARTO's dark_all tiles now watermark "API KEY REQUIRED" without an
+      // account, so the dark basemap uses Esri's free Dark Gray Canvas instead.
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+      attribution: "&copy; Esri &copy; HERE, Garmin, FAO, NOAA, USGS",
     },
     ocean: {
       url: "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
@@ -142,9 +182,9 @@ export function IceMap({ height = "480px" }: IceMapProps) {
   };
 
   return (
-    <div className="relative rounded-[18px] overflow-hidden border border-[rgba(165,177,224,0.18)] shadow-2xl bg-[#090d16]">
+    <div className="relative rounded-[18px] overflow-hidden border border-[rgba(196,219,255,0.18)] shadow-2xl bg-[#0a1120]">
       {/* Top Map Toolbar: Basemap Selector & Live Counter */}
-      <div className="absolute top-3 right-3 z-[1000] flex items-center gap-2 bg-[rgba(10,14,24,0.85)] backdrop-blur-md px-3 py-1.5 rounded-xl border border-[rgba(165,177,224,0.2)]">
+      <div className="absolute top-3 right-3 z-[1000] flex items-center gap-2 bg-[rgba(148,180,235,0.12)] backdrop-blur-xl px-3 py-1.5 rounded-xl border border-[rgba(196,219,255,0.24)]">
         <span className="text-[10px] text-[#9297b1] uppercase tracking-wider font-semibold mr-1">
           Basemap:
         </span>
@@ -184,7 +224,7 @@ export function IceMap({ height = "480px" }: IceMapProps) {
       </div>
 
       {/* Top Left Live Status Pill */}
-      <div className="absolute top-3 left-14 z-[1000] bg-[rgba(10,14,24,0.85)] backdrop-blur-md px-3 py-1.5 rounded-xl border border-[rgba(165,177,224,0.2)] flex items-center gap-2.5">
+      <div className="absolute top-3 left-14 z-[1000] bg-[rgba(148,180,235,0.12)] backdrop-blur-xl px-3 py-1.5 rounded-xl border border-[rgba(196,219,255,0.24)] flex items-center gap-2.5">
         <span className="w-2 h-2 rounded-full bg-[#45e0d0] animate-ping" />
         <span className="text-[11px] text-[#e0e5ff] font-medium font-space">
           Copernicus AMSR2 Telemetry
@@ -216,6 +256,7 @@ export function IceMap({ height = "480px" }: IceMapProps) {
         {/* Sea Ice SAR Radar Concentration Grid Cells */}
         {gridPoints.map((point, i) => {
           const style = getConcentrationStyle(point.concentration);
+          const isSelected = selectedCell === point;
           return (
             <Rectangle
               key={`cell-${i}-${point.lat}-${point.lon}`}
@@ -224,10 +265,10 @@ export function IceMap({ height = "480px" }: IceMapProps) {
                 [point.lat + 0.22, point.lon + 0.45],
               ]}
               pathOptions={{
-                color: style.color,
-                weight: 1,
+                color: isSelected ? "#45e0d0" : style.color,
+                weight: isSelected ? 2.5 : 1,
                 fillColor: style.fillColor,
-                fillOpacity: style.fillOpacity,
+                fillOpacity: isSelected ? Math.min(1, style.fillOpacity + 0.15) : style.fillOpacity,
               }}
               eventHandlers={{
                 click: () => setSelectedCell(point),
@@ -261,30 +302,44 @@ export function IceMap({ height = "480px" }: IceMapProps) {
           );
         })}
 
-        {/* Major Iceberg Hazard Markers with glowing pulse rings */}
-        {icebergs.map((berg) => (
-          <CircleMarker
-            key={`berg-${berg.id}`}
-            center={[berg.lat, berg.lon]}
-            radius={9}
-            pathOptions={{
-              color: "#ff3b30",
-              weight: 2,
-              fillColor: "#ff453a",
-              fillOpacity: 0.85,
-            }}
-          >
-            <CircleMarker
-              center={[berg.lat, berg.lon]}
-              radius={18}
-              pathOptions={{
-                color: "rgba(255, 69, 58, 0.4)",
-                weight: 1.5,
-                fillColor: "rgba(255, 69, 58, 0.15)",
-                fillOpacity: 0.3,
-                dashArray: "3, 3",
-              }}
-            />
+        {/* Major Iceberg Hazard Markers — live radar-contact style, sized by calved mass */}
+        {icebergs.map((berg) => {
+          const estDraftM = Math.round(berg.sizeKm * 8.5);
+          const isGiant = berg.sizeKm > 10;
+          return (
+            <Fragment key={`berg-${berg.id}`}>
+              {/* CPA standoff advisory zone — radius follows the operator's CPA buffer setting */}
+              <CircleMarker
+                center={[berg.lat, berg.lon]}
+                radius={Math.max(8, Math.min(28, cpaNm * 0.7))}
+                pathOptions={{
+                  color: "rgba(255, 69, 58, 0.4)",
+                  weight: 1.5,
+                  fillColor: "rgba(255, 69, 58, 0.15)",
+                  fillOpacity: 0.12,
+                  dashArray: "3, 3",
+                }}
+              />
+              {/* Bathymetric keel contour: dashed ring suggesting the submerged ice footprint */}
+              {isGiant && (
+                <CircleMarker
+                  center={[berg.lat, berg.lon]}
+                  radius={22}
+                  pathOptions={{
+                    color: "rgba(109, 220, 255, 0.45)",
+                    weight: 1.2,
+                    fillColor: "rgba(109, 220, 255, 0.06)",
+                    fillOpacity: 0.2,
+                    dashArray: "6, 5",
+                  }}
+                />
+              )}
+              {/* Pulsing radar-contact marker */}
+              <Marker
+                position={[berg.lat, berg.lon]}
+                icon={bergIcons.get(berg.id)}
+                zIndexOffset={500}
+              >
             <Popup>
               <div className="p-1 min-w-[190px] text-[#f1f2fa]">
                 <div className="flex items-center justify-between border-b border-red-500/30 pb-1 mb-1">
@@ -303,18 +358,56 @@ export function IceMap({ height = "480px" }: IceMapProps) {
                     <strong className="text-white">Location:</strong> {Math.abs(berg.lat).toFixed(2)}°S,{" "}
                     {Math.abs(berg.lon).toFixed(2)}°W
                   </div>
+                  <div>
+                    <strong className="text-white">Est. Keel Draft:</strong> ~{estDraftM} m below waterline
+                  </div>
                   <div className="text-[10px] text-[#ffa502] bg-[rgba(255,165,2,0.12)] p-1.5 rounded-lg border border-[rgba(255,165,2,0.25)] mt-1.5">
-                    Standoff advisory: 5.0 NM mandatory clearance
+                    Standoff advisory: {cpaNm} NM CPA buffer (Settings)
                   </div>
                 </div>
               </div>
             </Popup>
-          </CircleMarker>
-        ))}
+              </Marker>
+            </Fragment>
+          );
+        })}
+
+        {/* Own-ship position: cyan nav light with safety halo */}
+        <CircleMarker
+          center={[vesselPos.lat, vesselPos.lon]}
+          radius={6}
+          pathOptions={{
+            color: "#ffffff",
+            weight: 1.5,
+            fillColor: "#45e0d0",
+            fillOpacity: 1,
+          }}
+          zIndexOffset={900}
+        >
+          <Popup>
+            <div className="p-1 min-w-[160px] text-[#f1f2fa]">
+              <div className="text-xs font-bold text-[#45e0d0] mb-1">⚓ R/V PIONEER (Own Ship)</div>
+              <div className="text-[11px] text-[#c2c7e0]">
+                {Math.abs(vesselPos.lat).toFixed(2)}°S, {Math.abs(vesselPos.lon).toFixed(2)}°W — ice-class hull, nominal propulsion.
+              </div>
+            </div>
+          </Popup>
+        </CircleMarker>
+        <CircleMarker
+          center={[vesselPos.lat, vesselPos.lon]}
+          radius={14}
+          pathOptions={{
+            color: "rgba(69, 224, 208, 0.5)",
+            weight: 1.5,
+            fillColor: "rgba(69, 224, 208, 0.08)",
+            fillOpacity: 0.15,
+            dashArray: "2, 4",
+          }}
+        />
       </MapContainer>
 
       {/* Floating Bottom Legend & Scale Overlay */}
-      <div className="absolute bottom-4 right-4 z-[1000] bg-[rgba(10,14,24,0.92)] backdrop-blur-lg p-3 rounded-2xl border border-[rgba(165,177,224,0.22)] shadow-xl max-w-xs text-[#e0e5ff]">
+      <div className="absolute bottom-4 right-4 z-[1000] bg-[rgba(148,180,235,0.14)] backdrop-blur-xl p-3 rounded-2xl border border-[rgba(196,219,255,0.26)] shadow-xl max-w-xs text-[#e0e5ff]">
         <div className="flex justify-between items-center mb-2 pb-1 border-b border-[rgba(165,177,224,0.15)]">
           <span className="text-[10px] font-space font-semibold uppercase tracking-wider text-[#45e0d0]">
             Sea-Ice Concentration (SIC)
@@ -339,10 +432,21 @@ export function IceMap({ height = "480px" }: IceMapProps) {
           <span>100%</span>
         </div>
 
-        {/* Iceberg Legend Indicator */}
-        <div className="flex items-center gap-2 mt-2.5 pt-2 border-t border-[rgba(165,177,224,0.15)] text-[10px]">
-          <span className="w-3 h-3 rounded-full bg-[#ff453a] border border-white flex-shrink-0" />
-          <span className="text-[#c2c7e0]">Tracked Iceberg (5 NM Hazard Zone)</span>
+        {/* Live grid statistics + iceberg legend */}
+        <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-[rgba(165,177,224,0.15)] text-[10px]">
+          <span className="flex items-center gap-1.5 text-[#c2c7e0]">
+            <span className="w-3 h-3 rounded-full bg-[#ff453a] border border-white flex-shrink-0" />
+            Tracked Iceberg ({cpaNm} NM hazard zone)
+          </span>
+          <span className="font-mono text-[#9297b1]">{icebergs.length} contacts</span>
+        </div>
+        <div className="flex items-center justify-between mt-1.5 text-[10px] font-mono">
+          <span className="text-[#9297b1]">Grid mean SIC</span>
+          <span className="text-[#6ddcff] font-bold">{stats.avg}%</span>
+        </div>
+        <div className="flex items-center justify-between mt-0.5 text-[10px] font-mono">
+          <span className="text-[#9297b1]">Heavy cells (≥70%)</span>
+          <span className="text-[#ffca72] font-bold">{stats.highRiskCount} / {gridPoints.length}</span>
         </div>
       </div>
     </div>

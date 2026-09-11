@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { EnvironmentalCondition } from '../../types';
 import { IceMap } from '../IceMap';
 
@@ -13,6 +13,18 @@ export const IceConditionsView: React.FC<IceConditionsViewProps> = ({ environmen
     { type: 'First-Year Pack Ice (Medium)', concentration: '5-6/10', thickness: '0.7m – 1.2m', risk: 'Navigable along leads' },
     { type: 'Open Water / Leads', concentration: '<1/10', thickness: '<0.1m (Pancake)', risk: 'Clear transit corridor' },
   ];
+
+  // Forward sonar range readout: small random walk between 3.8 and 5.6 nm
+  const [sonarRangeNm, setSonarRangeNm] = useState(4.8);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setSonarRangeNm((prev) => {
+        const next = prev + (Math.random() * 0.6 - 0.3);
+        return Math.round(Math.max(3.8, Math.min(5.6, next)) * 10) / 10;
+      });
+    }, 2200);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="space-y-4" id="view-ice-conditions">
@@ -116,7 +128,7 @@ export const IceConditionsView: React.FC<IceConditionsViewProps> = ({ environmen
                 <span className="w-2 h-2 rounded-full bg-[#45e0d0] shadow-[0_0_8px_#45e0d0] z-10" />
               </div>
               <span className="text-[11px] font-mono text-[#45e0d0] font-semibold mt-1">
-                Acoustic Clear Ahead: 4.8 nm
+                Acoustic Clear Ahead: {sonarRangeNm.toFixed(1)} nm
               </span>
               <span className="text-[10px] text-[#9297b1] mt-0.5">
                 Subsurface pressure keel detection: Nominal

@@ -20,7 +20,7 @@ export const IcebergList: React.FC<IcebergListProps> = ({
   const displayBergs = icebergs.slice(0, 4);
 
   return (
-    <div className="bento-card overflow-hidden flex flex-col justify-between" id="tracked-icebergs-panel">
+    <div className="bento-card p-5 overflow-hidden flex flex-col justify-between" id="tracked-icebergs-panel">
       {/* Header */}
       <div>
         <div className="flex justify-between items-center pb-3 border-b border-[rgba(165,177,224,0.15)] mb-2">
@@ -43,9 +43,9 @@ export const IcebergList: React.FC<IcebergListProps> = ({
             <span
               className="badge border border-[rgba(69,224,208,0.25)] text-[#45e0d0] bg-[rgba(69,224,208,0.08)] rounded-md px-2 py-1 text-[9px] uppercase tracking-[1px] cursor-pointer"
               onClick={onNavigateToCatalog}
-              title="View all 7 tracked objects in catalog"
+              title={`View all ${icebergs.length} tracked objects in catalog`}
             >
-              04 Contacts
+              {String(icebergs.length).padStart(2, '0')} Contacts
             </span>
           </div>
         </div>
@@ -108,7 +108,7 @@ export const IcebergList: React.FC<IcebergListProps> = ({
 
       {/* Catalog CTA */}
       <div className="pt-2 border-t border-[rgba(165,177,224,0.1)] flex justify-between items-center text-[10px]">
-        <span className="text-[#666b86]">Total Corridor Trackers: 07</span>
+        <span className="text-[10px] text-[#666b86]">Total Corridor Trackers: {String(icebergs.length).padStart(2, '0')}</span>
         <button
           onClick={onNavigateToCatalog}
           className="text-[#45e0d0] hover:underline cursor-pointer font-medium"

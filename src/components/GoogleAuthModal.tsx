@@ -13,27 +13,71 @@ interface GoogleAuthModalProps {
   onSuccess: (user: UserProfile) => void;
 }
 
+// Google Identity Services must only be initialized ONCE per page load —
+// re-initializing on every modal open spams the GSI console warning and can
+// break the rendered button. The active callback is kept in a module pointer
+// so a single initialization still always invokes the latest handlers.
+let gsiInitializedFor: string | null = null;
+let gsiActiveCallback: ((credential: string) => void) | null = null;
+
+// Google silently refuses sign-in when the running origin is not registered
+// as an Authorized JavaScript Origin on the OAuth client. Origins match
+// exactly (scheme included!), so http://localhost:3000 and
+// https://localhost:3000 are DIFFERENT entries in Google Cloud Console.
+// We optimistically allow localhost dev origins — if the exact scheme is not
+// registered, GSI's error_callback surfaces a precise fix-it message.
+function isGoogleAuthAvailableOnThisOrigin(): boolean {
+  try {
+    const allowed = new URL(GOOGLE_CONFIG.appUrl).origin;
+    if (window.location.origin === allowed) return true;
+    const { hostname, protocol } = window.location;
+    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+    return isLocal && (protocol === 'http:' || protocol === 'https:');
+  } catch {
+    return false;
+  }
+}
+
 export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [originBlocked] = useState<boolean>(() => !isGoogleAuthAvailableOnThisOrigin());
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || originBlocked) return;
 
     const timer = setTimeout(() => {
       if (typeof window !== 'undefined' && window.google?.accounts?.id) {
         try {
-          window.google.accounts.id.initialize({
-            client_id: GOOGLE_CONFIG.clientId,
-            callback: (response: any) => {
-              if (response?.credential) {
-                const user = loginWithGoogleCredential(response.credential);
-                onSuccess(user);
-                onClose();
-              } else {
-                setErrorMsg('No credential returned by Google.');
-              }
-            },
-          });
+          gsiActiveCallback = (credential: string) => {
+            const user = loginWithGoogleCredential(credential);
+            onSuccess(user);
+            onClose();
+          };
+
+          if (gsiInitializedFor !== GOOGLE_CONFIG.clientId) {
+            window.google.accounts.id.initialize({
+              client_id: GOOGLE_CONFIG.clientId,
+              callback: (response: any) => {
+                if (response?.credential && gsiActiveCallback) {
+                  gsiActiveCallback(response.credential);
+                } else {
+                  console.warn('Google sign-in returned no credential.', response);
+                }
+              },
+              // Surface real failures instead of failing silently
+              error_callback: (err: any) => {
+                console.warn('Google Identity error:', err?.type || err);
+                if (err?.type === 'origin_mismatch') {
+                  setErrorMsg(
+                    `Google rejected this origin (${window.location.origin}). Origins match exactly — add "${window.location.origin}" in Google Cloud Console → APIs & Services → Credentials → Authorized JavaScript origins. Note http:// and https://localhost are separate entries.`,
+                  );
+                } else {
+                  setErrorMsg('Google sign-in failed. Check the browser console for the GSI error type.');
+                }
+              },
+            });
+            gsiInitializedFor = GOOGLE_CONFIG.clientId;
+          }
 
           const btnElem = document.getElementById('google-official-btn');
           if (btnElem) {
@@ -48,12 +92,15 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({ isOpen, onClos
           }
         } catch (err: any) {
           console.warn('Google GSI init notice:', err);
+          setErrorMsg('Google Identity script failed to initialize in this browser.');
         }
+      } else {
+        setErrorMsg('Google Identity script did not load (offline or blocked). Use the local bridge below.');
       }
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [isOpen, onSuccess, onClose]);
+  }, [isOpen, originBlocked, onSuccess, onClose]);
 
   if (!isOpen) return null;
 
@@ -65,7 +112,7 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({ isOpen, onClos
       picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
       role: 'Chief Ice Navigation Officer',
       loginTime: new Date().toISOString(),
-      provider: 'google',
+      provider: 'local', // honest labeling: this is the offline dev bridge, not real OAuth
     };
     setCurrentUser(mockUser);
     onSuccess(mockUser);
@@ -74,7 +121,7 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({ isOpen, onClos
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4">
-      <div className="relative w-full max-w-md rounded-2xl border border-[rgba(165,177,224,0.25)] bg-[#0d1020] p-6 shadow-2xl text-[#f1f2fa]">
+      <div className="relative w-full max-w-md rounded-2xl border border-[rgba(196,219,255,0.28)] bg-[rgba(148,180,235,0.12)] backdrop-blur-2xl p-6 shadow-2xl text-[#f1f2fa]">
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -123,10 +170,26 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({ isOpen, onClos
           </div>
         )}
 
+        {originBlocked && (
+          <div className="p-3 mb-4 rounded-lg bg-[rgba(255,202,114,0.08)] border border-[rgba(255,202,114,0.3)] text-[11px] leading-relaxed">
+            <div className="text-[#ffca72] font-semibold mb-1">
+              ⚠ Google sign-in unavailable on this origin
+            </div>
+            <div className="text-[#b7bad0]">
+              The OAuth client only allows <span className="font-mono text-[#c9c2ff]">{GOOGLE_CONFIG.appUrl}</span>.
+              This app is running on <span className="font-mono text-[#ffca72]">{window.location.origin}</span>,
+              which Google rejects silently. Add this origin in Google Cloud Console → APIs &amp; Services → Credentials →
+              Authorized JavaScript origins to enable the official button — or use the local bridge below.
+            </div>
+          </div>
+        )}
+
         {/* Google Official Button Container */}
-        <div className="flex flex-col items-center justify-center my-4 min-h-[44px]">
-          <div id="google-official-btn" className="flex justify-center" />
-        </div>
+        {!originBlocked && (
+          <div className="flex flex-col items-center justify-center my-4 min-h-[44px]">
+            <div id="google-official-btn" className="flex justify-center" />
+          </div>
+        )}
 
         {/* Local/Dev Fallback */}
         <div className="relative flex py-2 items-center">

@@ -43,7 +43,7 @@ export const IcebergTrackingView: React.FC<IcebergTrackingViewProps> = ({
 
         <div className="flex items-center gap-2">
           <span className="px-3 py-1.5 rounded-xl bg-[rgba(255,202,114,0.1)] border border-[rgba(255,202,114,0.25)] text-[#ffca72] text-xs font-mono font-bold">
-            07 Active Objects
+            {String(icebergs.length).padStart(2, '0')} Active Objects
           </span>
           <span className="px-3 py-1.5 rounded-xl bg-[rgba(255,113,137,0.1)] border border-[rgba(255,113,137,0.25)] text-[#ff7189] text-xs font-mono font-bold">
             1 High Vigilance
